@@ -152,6 +152,31 @@ EOF
   sudo pacman -Sy
 fi
 
+# Ask if the user wants to install reflector
+if ask_yes_no "Do you want to install reflector to improve pacman mirror selection? (y/n)"; then
+  # Install reflector package
+  sudo pacman -S reflector --noconfirm --needed
+
+  # Ask for countries (optional)
+  read -p "Enter comma-separated list of countries to prioritize (e.g., France,Germany) [leave blank for default]: " countries
+
+  # Update reflector configuration with countries (if provided)
+  if [[ -n "$countries" ]]; then
+    sudo sed -i "s/# --country France,Germany/--country $countries/g" /etc/xdg/reflector/reflector.conf
+  fi
+
+  # Change sorting method to rate
+  sudo sed -i 's#--sort age#--sort rate#g' /etc/xdg/reflector/reflector.conf
+
+  # Ask if the user wants to enable the reflector service
+  if ask_yes_no "Do you want to enable the reflector service to automatically update mirrors? (y/n)"; then
+    sudo systemctl enable reflector
+    sudo systemctl start reflector
+  fi
+
+  echo "Reflector installed and configured (if countries provided)."
+fi
+
 # Ask if the user wants to install Homebrew
 if ask_yes_no "Do you want to install Homebrew? (y/n)"; then
   # Install Homebrew
