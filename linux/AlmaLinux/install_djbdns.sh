@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Copyright (c) 2024 Rámon van Raaij
+
+# License: MIT
+
+# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+
+# install_djbdns.sh - This script installs djbdns, a custom DNS server, on AlmaLinux 9. It first checks if the script is run as root and the system is compatible. Then, it disables SELinux (with user confirmation) and installs required packages. Finally, it sets up djbdns with user-provided information like IP addresses and upstream DNS servers. The script concludes by suggesting a system reboot and further configuration steps.
+
 # Only for AlmaLinux 9
 
 # Check if the script is run as root
@@ -30,7 +38,7 @@ if [[ $disable_selinux =~ ^[Yy]$ ]]; then
 fi
 
 # Installing required packages
-yum install chkconfig rsync wget
+yum install chkconfig wget
 
 # Define the base URL for package downloads
 base_url="https://updates.interworx.com/interworx/8/base/RPMS/9Server/x86_64/"

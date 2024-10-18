@@ -1,5 +1,72 @@
 #!/bin/sh
 
+# Copyright (c) 2024 Rámon van Raaij
+
+# License: MIT
+
+# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+
+# 00-runonce.sh
+# This script is an interactive system setup tool for Arch Linux users.
+# It guides the user through various configuration options with informative
+# questions and validation checks. Here's a breakdown:
+
+# 1. Security Checks:
+#    - Ensures the script is not run with sudo or root privileges (prevents accidental system damage).
+
+# 2. System Updates:
+#    - Asks the user if they want to fully update the system using `pacman`.
+
+# 3. OpenSSH Server:
+#    - Asks if the user wants to install the OpenSSH server.
+#    - Offers options to start and enable the server at boot time.
+
+# 4. Firewall:
+#    - Asks if the user wants to install the `ufw` firewall.
+#    - Guides the user through allowing SSH traffic and enabling the firewall.
+
+# 5. Bluetooth:
+#    - Asks if the user wants to install Bluetooth support.
+#    - Offers options to start and enable Bluetooth at boot time.
+
+# 6. Fish Shell:
+#    - Asks if the user wants to install and use the `fish` shell.
+#    - Modifies the user's `.bashrc` file to set `fish` as the default shell.
+
+# 7. Flatpak with Flathub:
+#    - Sets up the Flathub store for installing flatpak applications.
+
+# 8. Yay AUR Helper:
+#    - Asks if the user wants to install the `yay` AUR helper for accessing the Arch User Repository.
+#    - Provides instructions for installation.
+
+# 9. Chaotic-AUR Repository:
+#    - Asks if the user wants to add the Chaotic-AUR repository for additional packages.
+#    - Guides the user through adding the repository key and configuration.
+
+# 10. Reflector Package Manager Mirror Selection:
+#    - Asks if the user wants to install `reflector` to improve pacman mirror selection.
+#    - Offers options to prioritize specific countries and enable the reflector service for automatic updates.
+
+# 11. Homebrew Installation:
+#    - Asks if the user wants to install Homebrew for package management on Linux.
+#    - Configures Homebrew for the user's shell and prompts the user to run `brew doctor` for verification.
+
+# 12. KDE Plasma Desktop Environment (Optional):
+#    - Asks if the user wants to install the KDE Plasma desktop environment.
+#    - Offers options to install additional KDE applications and set it as the default desktop at boot time.
+
+# 13. SSH Key Generation (Optional):
+#    - Guides the user through creating an SSH key for GitHub authentication.
+#    - Provides instructions for adding the key to the user's GitHub account.
+
+# 14. Chezmoi Configuration Management (Optional):
+#    - Asks if the user wants to install Chezmoi for managing dotfiles.
+#    - Guides the user through initialization with their GitHub username and applying the configuration.
+
+# This script offers a comprehensive and user-friendly way to customize a new Arch Linux installation.
+# It prioritizes security checks, provides clear options, and offers helpful instructions for each step.
+
 # Check if script is run with sudo or root
 if [[ $EUID -eq 0 ]]; then
   echo "Error: This script should not be run with sudo or as root."

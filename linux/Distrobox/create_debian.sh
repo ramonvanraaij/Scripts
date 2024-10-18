@@ -1,6 +1,14 @@
 #!/bin/bash
 
-# dependencies: wget, jq
+# Copyright (c) 2024 Rámon van Raaij
+
+# License: MIT
+
+# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+
+# create_debian.sh - This script creates a Debian container named "debian" (or a user-defined name) using distrobox. It then updates the container, installs productivity tools like bat and fish, sets up a symbolic link for "batcat", and installs the latest "fastfetch" tool. Finally, it cleans up the downloaded package file (optional).
+
+# Dependencies: distrobox, wget, jq
 
 # Set a variable for the pod name (optional)
 POD_NAME="debian"

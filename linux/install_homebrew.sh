@@ -1,5 +1,13 @@
 #!/bin/bash
 
+# Copyright (c) 2024 Rámon van Raaij
+
+# License: MIT
+
+# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+
+# install_homebrew.sh - This script first asks for your permission to install Homebrew package manager for Linux. If you agree, it downloads and executes the official installation script. Finally, it configures your shell profile to recognize Homebrew commands and recommends opening a new terminal window for the changes to work.
+
 echo "This script will install Homebrew package manager for Linux."
 
 read -p "Do you want to proceed? (y/N) " -n 1 -r
