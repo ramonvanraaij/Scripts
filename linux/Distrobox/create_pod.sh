@@ -101,7 +101,7 @@ create_pod() {
     distrobox enter "${pod_name}" -- sudo dpkg -i fastfetch.deb
 
     # Clean up downloaded file (optional)
-    rm fastfetch.deb
+    distrobox enter "${pod_name}" -- rm fastfetch.deb
   fi
 
   # Install fastfetch for AlmaLinux OS
@@ -112,7 +112,7 @@ create_pod() {
     distrobox enter "${pod_name}" -- sudo rpm -i fastfetch.rpm
 
     # Clean up downloaded file (optional)
-    rm fastfetch.rpm
+    distrobox enter "${pod_name}" -- rm fastfetch.rpm
   fi
 
   echo "${os^} pod '${pod_name}' set up with default tools and fastfetch."
