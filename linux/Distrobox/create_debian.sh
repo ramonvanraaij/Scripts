@@ -28,7 +28,7 @@ distrobox upgrade "${POD_NAME}"
 distrobox enter "${POD_NAME}" -- sudo apt -y update
 
 # Install default packages
-distrobox enter "${POD_NAME}" -- sudo apt -y install bat fish ugrep exa htop wget
+distrobox enter "${POD_NAME}" -- sudo apt -y install bat fish ugrep exa htop wget fonts-hack-ttf
 
 # Create a symbolic link for batcat
 distrobox enter "${POD_NAME}" --  sudo ln -s /usr/bin/batcat /usr/bin/bat
