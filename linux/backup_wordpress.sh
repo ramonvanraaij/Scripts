@@ -6,28 +6,48 @@
 
 # Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 
-# backup_wordpress.sh - This script is designed to create a compressed backup of a WordPress website. It first retrieves database credentials from the wp-config.php file, then backs up both the website's database and files using Zstandard compression. Finally, it keeps only a specified number of backups and logs the process for reference.
+# backup_wordpress.sh
+# This script creates compressed backups of a WordPress website (database & files) using Zstandard.
+# It checks for errors during backup and sends email notifications (if enabled) with details.
+# It keeps only a specified number of backups and logs the process for reference.
 
 # Define configuration variables
 SITE_NAME="www.domain.com"                        # Site name (customize as needed)
 SITE_ROOT="$HOME/public_html"                     # Path to your WordPress root directory
 BACKUP_DIR="$HOME/backups"                        # Location to store backups
+MIN_DB_BACKUP_SIZE=512000                         # Minimum allowed database backup size in bytes, script will error if the database backup size is less than this
 LOG_FILE="$BACKUP_DIR/${SITE_NAME}-wp-backup.log" # Path for the log file
 MAX_BACKUPS=5                                     # Maximum number of backups to keep
+# Define Email configuration variables (Optional)
+EMAIL_ENABLED=false                               # Set to true to enable email notifications
+from="noreply@domain.com"                         # Replace with your desired from address
+recipient="user@domain.com"                       # Replace with your desired recopient address
 
 # Initialize log file
 echo "** WordPress Backup Log - $(date +%Y-%m-%d) **" > "$LOG_FILE"
 
 # Validate essential directories
 if [[ ! -d "$SITE_ROOT" || ! -d "$BACKUP_DIR" ]]; then
-  echo "Error: Missing required directories!" >> "$LOG_FILE"
-  exit 1
+   ERROR_MSG="Error: Missing required directories!"
+   echo "$ERROR_MSG"
+   echo "$ERROR_MSG" >> "$LOG_FILE"
+   if [[ "$EMAIL_ENABLED" == "true" ]]; then
+     subject="WordPress Backup of $SITE_NAME Failed - See Error for details"
+     echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$ERROR_MSG" | sendmail -f "$from" -t
+   fi
+   exit 1
 fi
 
 # Check for wp-config.php existence (WordPress installation check)
 if [[ ! -f "$SITE_ROOT/wp-config.php" ]]; then
-  echo "Error: Could not locate wp-config.php. Is this a valid WordPress installation?" >> "$LOG_FILE"
-  exit 1
+   ERROR_MSG="Error: Could not locate wp-config.php. Is this a valid WordPress installation?"
+   echo "$ERROR_MSG"
+   echo "$ERROR_MSG" >> "$LOG_FILE"
+   if [[ "$EMAIL_ENABLED" == "true" ]]; then
+     subject="WordPress Backup of $SITE_NAME Failed - See Error for details"
+     echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$ERROR_MSG" | sendmail -f "$from" -t
+   fi
+   exit 1
 fi
 
 # Extract database credentials from wp-config.php
@@ -42,16 +62,63 @@ mkdir -p "$BACKUP_DIR"
 # Backup database
 mysqldump -u "$DB_USER" -p"$DB_PASSWORD" -h "$DB_HOST" "$DB_NAME" | zstd --adapt > "$BACKUP_DIR/${SITE_NAME}-wp_db-$(date +%Y-%m-%d).zst"
 if [[ $? -ne 0 ]]; then
-  echo "Error: Failed to dump database. Check wp-config credentials and permissions." >> "$LOG_FILE"
-  exit 1
+   ERROR_MSG="Error: Failed to dump database. Check wp-config credentials and permissions."
+   echo "$ERROR_MSG"
+   echo "$ERROR_MSG" >> "$LOG_FILE"
+   if [[ "$EMAIL_ENABLED" == "true" ]]; then
+     subject="WordPress Backup of $SITE_NAME Failed - See Error for details"
+     echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$ERROR_MSG" | sendmail -f "$from" -t
+   fi
+   exit 1
+fi
+
+# Get the size of the database backup file
+db_backup_size=$(du -s --block-size=1 "$BACKUP_DIR/${SITE_NAME}-wp_db-$(date +%Y-%m-%d).zst" | awk '{print $1}')
+
+# Check if the database backup size is less than the minimum
+if [[ $db_backup_size -lt $MIN_DB_BACKUP_SIZE ]]; then
+   ERROR_MSG="Error: Database backup file size ($db_backup_size bytes) is too small. Check database configuration and data."
+   echo "$ERROR_MSG"
+   echo "$ERROR_MSG" >> "$LOG_FILE"
+   if [[ "$EMAIL_ENABLED" == "true" ]]; then
+     subject="WordPress Backup of $SITE_NAME Failed - See Error for details"
+     echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$ERROR_MSG" | sendmail -f "$from" -t
+   fi
+   exit 1
 fi
 
 # Backup website files (excluding output)
 tar -cvf "$BACKUP_DIR/${SITE_NAME}-wp_files-$(date +%Y-%m-%d).tar.zst" -C "$SITE_ROOT" .
-
 if [[ $? -ne 0 ]]; then
-  echo "Error: Failed to backup website files." >> "$LOG_FILE"
+   ERROR_MSG="Error: Failed to backup website files."
+   echo "$ERROR_MSG"
+   echo "$ERROR_MSG" >> "$LOG_FILE"
+   if [[ "$EMAIL_ENABLED" == "true" ]]; then
+     subject="WordPress Backup of $SITE_NAME Failed - See Error for details"
+     echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$ERROR_MSG" | sendmail -f "$from" -t
+   fi
   exit 1
+fi
+
+# Get the size of the website root directory
+site_root_size=$(du -s "$SITE_ROOT" | awk '{print $1}')
+
+# Get the size of the backup file
+backup_file_size=$(du -s "$BACKUP_DIR/${SITE_NAME}-wp_files-$(date +%Y-%m-%d).tar.zst" | awk '{print $1}')
+
+# Calculate the minimum acceptable backup size (50% of website root)
+min_backup_size=$((site_root_size / 2))
+
+# Check if backup size is less than 50% of website root
+if [[ $backup_file_size -lt $min_backup_size ]]; then
+   ERROR_MSG="Error: Backup file size ($backup_file_size Kbytes) is less than 50% of website root size ($site_root_size Kbytes). Backup may be incomplete."
+   echo "$ERROR_MSG"
+   echo "$ERROR_MSG" >> "$LOG_FILE"
+   if [[ "$EMAIL_ENABLED" == "true" ]]; then
+     subject="WordPress Backup of $SITE_NAME Failed - See Error for details"
+     echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$ERROR_MSG" | sendmail -f "$from" -t
+   fi
+   exit 1
 fi
 
 # Rotate backups to keep only the last MAX_BACKUPS
@@ -61,32 +128,33 @@ ls -t "$BACKUP_DIR" | grep -E "^${SITE_NAME}-wp_(db|files|summary)-" | tail -n +
 echo "** Website Backup Completed Successfully! **" >> "$LOG_FILE"
 echo "" >> "$LOG_FILE"
 
-echo "** WordPress Site File List (Depth 2):" >> "$LOG_FILE"
-du -h --max-depth 2 "$SITE_ROOT" >> "$LOG_FILE"
+echo "** WordPress Site Size Information:" >> "$LOG_FILE"
+du -hs  "$SITE_ROOT" >> "$LOG_FILE"
 echo "" >> "$LOG_FILE"
 
-echo "** Backup File Information:" >> "$LOG_FILE"
-du -h "$BACKUP_DIR" >> "$LOG_FILE"
+echo "** Backup Files Information:" >> "$LOG_FILE"
+ls -lh "$BACKUP_DIR/${SITE_NAME}-wp_db-$(date +%Y-%m-%d).zst" >> "$LOG_FILE"
+ls -lh "$BACKUP_DIR/${SITE_NAME}-wp_files-$(date +%Y-%m-%d).tar.zst" >> "$LOG_FILE"
 echo "" >> "$LOG_FILE"
 
 # Create the backup summary content with proper newlines for the Email body
 backup_summary=$(cat << EOF
-** WordPress Site File List (Depth 2):**
+** WordPress Site Size Information:
+$(du -hs "$SITE_ROOT")
 
-$(du -h --max-depth 2 "$SITE_ROOT")
-
-** Backup File Information:**
-
-$(du -h "$BACKUP_DIR")
+** Backup Files Information:
+* Database Backup File:
+$(ls -lh "$BACKUP_DIR/${SITE_NAME}-wp_db-$(date +%Y-%m-%d).zst" | awk '{print $5,$9}')
+* Site Backup File:
+$(ls -lh "$BACKUP_DIR/${SITE_NAME}-wp_files-$(date +%Y-%m-%d).tar.zst" | awk '{print $5,$9}')
 EOF
 )
 
-# Optional: Email notification (uncomment to enable)
-#echo "** Sending backup log via email... **" >> "$LOG_FILE"
-#from="noreply@domain.com"              # Replace with your desired from address
-#recipient="user@domain.com"            # Replace with your desired recopient address
-#subject="WordPress Backup of $SITE_NAME Successful "
-#echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$backup_summary" | sendmail -f "$from" -t
+if [[ "$EMAIL_ENABLED" == "true" ]]; then
+  echo "** Sending backup log via email... **" >> "$LOG_FILE"
+  subject="WordPress Backup of $SITE_NAME Successful"  # Update subject to indicate success or error
+  echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$backup_summary" | sendmail -f "$from" -t
+fi
 
 # Exit script cleanly
 exit 0
