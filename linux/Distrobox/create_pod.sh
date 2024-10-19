@@ -4,7 +4,7 @@
 
 # Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 
-# Script to create an Arch Linux, Debian, or Ubuntu pod using distrobox
+# Script to create and update an AlmaLinux OS, Arch Linux, Debian, or Ubuntu pod with usefull packages installed, using distrobox
 
 # Dependencies: distrobox, wget, jq
 
