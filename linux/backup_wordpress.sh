@@ -28,10 +28,10 @@ REMOTE_HOST="your_remote_server.com"              # Remote server hostname
 REMOTE_USER="your_username"                       # Username for remote server (if password is used)
 REMOTE_DIR="/path/to/remote/backups"              # Remote directory to store backups
 REMOTE_SSH_KEY=""                                 # Optional: Path to your SSH key for passwordless login
-REMOTE_MAX_BACKUPS=90                             # Maximum number of remote backups to keep
+REMOTE_MAX_BACKUPS=10                             # Maximum number of remote backups to keep
 
 # Define Email configuration variables (Optional)
-EMAIL_ENABLED=true                                # Set to true to enable email notifications
+EMAIL_ENABLED=false                               # Set to true to enable email notifications
 from="noreply@domain.com"                         # Replace with your desired from address
 recipient="user@domain.com"                       # Replace with your desired recopient address
 
@@ -192,7 +192,7 @@ EOF
 
 if [[ "$EMAIL_ENABLED" == "true" ]]; then
   echo "** Sending backup log via email... **" >> "$LOG_FILE"
-  subject="WordPress Backup of $SITE_NAME Successful"  # Update subject to indicate success or error
+  subject="WordPress Backup of $SITE_NAME Successful"  # Update subject to indicate success
   echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$backup_summary" | sendmail -f "$from" -t
 fi
 
