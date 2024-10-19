@@ -25,7 +25,7 @@ MAX_BACKUPS=5                                     # Maximum number of backups to
 # Define Remote Server rsync configuration variables (Optional)
 RSYNC_ENABLED=false                               # Set to true to enable rsync to remote server
 REMOTE_HOST="your_remote_server.com"              # Remote server hostname
-REMOTE_USER="your_username"                       # Username for remote server (if password is used)
+REMOTE_USER="your_username"                       # Username for remote server
 REMOTE_DIR="/path/to/remote/backups"              # Remote directory to store backups
 REMOTE_SSH_KEY=""                                 # Optional: Path to your SSH key for passwordless login
 REMOTE_MAX_BACKUPS=10                             # Maximum number of remote backups to keep
@@ -33,7 +33,7 @@ REMOTE_MAX_BACKUPS=10                             # Maximum number of remote bac
 # Define Email configuration variables (Optional)
 EMAIL_ENABLED=false                               # Set to true to enable email notifications
 from="noreply@domain.com"                         # Replace with your desired from address
-recipient="user@domain.com"                       # Replace with your desired recopient address
+recipient="user@domain.com"                       # Replace with your desired recipient address
 
 # Initialize log file
 echo "** WordPress Backup Log - $(date +%Y-%m-%d) **" > "$LOG_FILE"
