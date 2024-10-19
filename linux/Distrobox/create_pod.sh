@@ -82,9 +82,8 @@ create_pod() {
   distrobox upgrade "${pod_name}"
 
   # Install default packages based on chosen OS
-  distrobox enter "${pod_name}" -- sudo "$package_manager" -y update
   if [[ "$package_manager" == "pacman" ]]; then
-    distrobox enter "${pod_name}" -- sudo "$package_manager" --noconfirm --needed -S $package_list
+    distrobox enter "${pod_name}" -- sudo "$package_manager" --noconfirm --needed -Syu $package_list
     distrobox enter "${pod_name}" -- sudo ln -s /usr/bin/bat /usr/bin/batcat
   elif [[ "$package_manager" == "apt" ]]; then
     distrobox enter "${pod_name}" -- sudo "$package_manager" -y install $package_list
