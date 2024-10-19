@@ -7,9 +7,12 @@
 # Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 
 # backup_wordpress.sh
-# This script creates compressed backups of a WordPress website (database & files) using Zstandard.
-# It checks for errors during backup and sends email notifications (if enabled) with details.
-# It keeps only a specified number of backups and logs the process for reference.
+# This script automates WordPress website backups.
+# - Creates compressed backups of both the database and website files using Zstandard compression.
+# - Checks for errors during the backup process and logs detailed information.
+# - Optionally sends email notifications for backup success or failure.
+# - Rotates backups locally and optionally on a remote server.
+# - Configurable options include site name, paths, email settings, and remote server details.
 
 # Define configuration variables
 SITE_NAME="www.domain.com"                        # Site name (customize as needed)
@@ -18,8 +21,17 @@ BACKUP_DIR="$HOME/backups"                        # Location to store backups
 MIN_DB_BACKUP_SIZE=512000                         # Minimum allowed database backup size in bytes, script will error if the database backup size is less than this
 LOG_FILE="$BACKUP_DIR/${SITE_NAME}-wp-backup.log" # Path for the log file
 MAX_BACKUPS=5                                     # Maximum number of backups to keep
+
+# Define Remote Server rsync configuration variables (Optional)
+RSYNC_ENABLED=false                               # Set to true to enable rsync to remote server
+REMOTE_HOST="your_remote_server.com"              # Remote server hostname
+REMOTE_USER="your_username"                       # Username for remote server (if password is used)
+REMOTE_DIR="/path/to/remote/backups"              # Remote directory to store backups
+REMOTE_SSH_KEY=""                                 # Optional: Path to your SSH key for passwordless login
+REMOTE_MAX_BACKUPS=90                             # Maximum number of remote backups to keep
+
 # Define Email configuration variables (Optional)
-EMAIL_ENABLED=false                               # Set to true to enable email notifications
+EMAIL_ENABLED=true                                # Set to true to enable email notifications
 from="noreply@domain.com"                         # Replace with your desired from address
 recipient="user@domain.com"                       # Replace with your desired recopient address
 
@@ -123,6 +135,34 @@ fi
 
 # Rotate backups to keep only the last MAX_BACKUPS
 ls -t "$BACKUP_DIR" | grep -E "^${SITE_NAME}-wp_(db|files|summary)-" | tail -n +$(($MAX_BACKUPS + 1)) | xargs rm -f
+
+# Check if rsync is enabled and configured
+if [[ "$RSYNC_ENABLED" == "true" ]]; then
+  # Create remote directory if it doesn't exist
+  ssh "$REMOTE_USER"@"$REMOTE_HOST" "mkdir -p $REMOTE_DIR" 2>/dev/null
+
+  # Get the names of the newly created backup files
+  backup_files=("$BACKUP_DIR/${SITE_NAME}-wp_db-$(date +%Y-%m-%d).zst" "$BACKUP_DIR/${SITE_NAME}-wp_files-$(date +%Y-%m-%d).tar.zst")
+
+  # Rsync only the newly created backup files
+  for file in "${backup_files[@]}"; do
+    rsync -avz "$file" "$REMOTE_USER"@"$REMOTE_HOST":$REMOTE_DIR
+  done
+
+  # Rotate backups on remote server
+  ssh "$REMOTE_USER"@"$REMOTE_HOST" "ls -t $REMOTE_DIR | grep -E '^${SITE_NAME}-wp_(db|files|summary)-' | tail -n +$(($MAX_BACKUPS + 1)) | xargs rm -f"
+
+  # Check if rsync was successful
+  if [[ $? -ne 0 ]]; then
+    ERROR_MSG="Error: Failed to rsync backups to remote server"
+    echo "$ERROR_MSG"
+    echo "$ERROR_MSG" >> "$LOG_FILE"
+    if [[ "$EMAIL_ENABLED" == "true" ]]; then
+      subject="WordPress Backup of $SITE_NAME Failed - See Error for details"
+      echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$ERROR_MSG" | sendmail -f "$from" -t
+    fi
+  fi
+fi
 
 # Log success message & details
 echo "** Website Backup Completed Successfully! **" >> "$LOG_FILE"
