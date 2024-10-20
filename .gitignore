@@ -1,3 +1,22 @@
 # Swap Files #
 .*.kate-swp
 .swp.*
+
+# Packages #
+*.tar
+*.tar.*
+*.jar
+*.exe
+*.msi
+*.zip
+*.tgz
+
+pkg/
+src/
+
+# Logs #
+*.log
+*.log.*
+
+# Other #
+*.sig
