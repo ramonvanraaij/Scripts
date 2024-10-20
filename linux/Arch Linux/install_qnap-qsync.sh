@@ -38,7 +38,7 @@ debtap QNAPQsyncClientUbuntux64.deb
 
 # Install the converted package
 echo "Installing Qsync..."
-sudo pacman -U qnapqsyncclient*.pkg.tar.zst
+sudo pacman -U qnapqsyncclient*.pkg.tar.zst --assume-installed android-emulator --assume-installed anaconda --assume-installed plex-media-server --assume-installed activitywatch-bin --assume-installed cura-bin --assume-installed clion
 
 # Remove downloaded deb package (optional)
 rm -f QNAPQsyncClientUbuntux64.deb
