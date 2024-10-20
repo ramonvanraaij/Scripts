@@ -6,15 +6,10 @@
 
 # Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 
-# install_qnap-qsync.sh - This script installs QNAP Qsync on Arch Linux. It checks for KDE Plasma, installs debtap if needed, updates package lists, downloads the Qsync package, converts it to Arch format, installs it, cleans up, and provides confirmation.
+# install_qnap-qsync.sh - This script installs QNAP Qsync on Arch Linux. It installs debtap if needed, updates package lists, downloads the Qsync package, converts it to Arch format, installs it, cleans up, and provides confirmation.
 
 # **Note:**
 # This script relies on `debtap` for conversion, which might not guarantee perfect compatibility.
-
-# Check for KDE Plasma (optional)
-# if [[ $(wmctrl -m | grep name | grep -i "KDE Plasma") ]]; then
-#   echo "KDE Plasma detected."
-# fi
 
 # Install debtap if not already installed
 if ! pacman -Q debtap > /dev/null 2>&1; then
