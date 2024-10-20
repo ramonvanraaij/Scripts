@@ -6,14 +6,7 @@
 
 # Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 
-# install_qnap-qsync.sh - This script installs QNAP Qsync on Ubuntu with optional KDE Plasma Wayland support. It updates package lists, installs dependencies, downloads the latest Qsync package, installs it using dpkg, fixes dependency issues, and optionally removes the downloaded file.
-
-# Check if KDE Plasma Wayland is installed (optional)
-if grep -q "KDE Plasma (Wayland)" /etc/xdg/desktop/kde-plasma.desktop; then
-  echo "KDE Plasma Wayland detected."
-else
-  echo "KDE Plasma Wayland not detected."
-fi
+# install_qnap-qsync.sh - This script installs QNAP Qsync on Ubuntu. It updates package lists, installs dependencies, downloads the latest Qsync package, installs it using dpkg, fixes dependency issues, and optionally removes the downloaded file.
 
 # Update package lists
 echo "Updating package lists..."
