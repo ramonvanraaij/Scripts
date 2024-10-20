@@ -28,7 +28,9 @@ sudo debtap -u
 
 # Download the latest Qsync package for Ubuntu (x64)
 DOWNLOAD_URL=$(curl -sL https://update.qnap.com/SoftwareRelease.xml | xmllint --xpath '/docRoot/utility/application[applicationName="com.qnap.qsync"]/platform[platformName="Ubuntu"]/software/downloadURL' - | sed 's/<\/downloadURL>//; s/<downloadURL>//'| head -n 1)
-wget -O QNAPQsyncClientUbuntux64.deb "$DOWNLOAD_URL"
+DOWNLOAD_FILE="QNAPQsyncClientUbuntux64.deb"
+
+wget -O "$DOWNLOAD_FILE" "$DOWNLOAD_URL"
 
 # Convert the Ubuntu package to Arch package
 echo "Converting Ubuntu package..."
