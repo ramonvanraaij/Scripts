@@ -24,8 +24,7 @@ echo "Installing dependencies..."
 sudo apt install libasound2 libxtst6 libnss3 libusb-1.0-0 qtwayland5
 
 # Download the latest Qsync package for Ubuntu (x64)
-# Replace LATEST with the actual version number from https://www.qnap.com/en/utilities/essentials#utliity_3
-DOWNLOAD_URL="https://download.qnap.com/Storage/Utility/QNAPQsyncClientUbuntux64-LATEST.deb"
+DOWNLOAD_URL=$(curl -sL https://update.qnap.com/SoftwareRelease.xml | xmllint --xpath '/docRoot/utility/application[applicationName="com.qnap.qsync"]/platform[platformName="Ubuntu"]/software/downloadURL' - | sed 's/<\/downloadURL>//; s/<downloadURL>//'| head -n 1)
 DOWNLOAD_FILE="QNAPQsyncClientUbuntux64.deb"
 
 wget -O "$DOWNLOAD_FILE" "$DOWNLOAD_URL"
