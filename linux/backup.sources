@@ -1,0 +1,21 @@
+# Example backup.sources file used by the backup.py Phyton 3 script
+# **File paths:**
+#
+# List the full paths to files or directories that you want to back up.
+#
+# **Examples:**
+#   #Files
+#   /etc/memcached.conf
+#   /etc/ssmtp/ssmtp.conf
+#   /etc/cron-apt/config
+#   /etc/hosts
+#
+# **Directory paths:**
+#
+# List the full paths to directories that you want to back up.
+# Do not include a trailing slash, as this would create a nested directory.
+#
+# **Examples:**
+#   # Directories
+#   /var/spool/cron/crontabs
+#   /etc/cron.d
