@@ -23,7 +23,7 @@ import subprocess
 import datetime
 
 # Define variables
-backupdir = "/root/backups/server-root/"
+backupdir = "/root/backups/rootfs/"
 ignore_comment = "#"  # Lines starting with this character will be ignored
 backupsource = "/root/scripts/backup.sources"  # Replace with your actual source file name
 
@@ -46,7 +46,9 @@ def rsync_recursive(source, destination):
 # Read lines from the backup source file
 with open(backupsource, "r") as f:
     for line in f:
-        # Skip lines that start with a comment character
+        # Skip blank lines, comments, and lines with only whitespaces
+        if not line.strip(): # Check if line is empty after stripping whitespaces
+            continue
         if line.startswith(ignore_comment):
             continue
 
