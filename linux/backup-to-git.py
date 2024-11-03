@@ -23,9 +23,9 @@ import subprocess
 import datetime
 
 # Define variables
-backupdir = "/root/backups/rootfs/"
+backupdir = "path_to_backupdir/gitbackup/rootfs/"
 ignore_comment = "#"  # Lines starting with this character will be ignored
-backupsource = "/root/scripts/backup.sources"  # Replace with your actual source file name
+backupsource = "path_to_backupsource/Scripts/backup.sources"  # Replace with your actual source file name
 
 def remove_last_dir(path):
     """Removes the last directory component from a given path."""
