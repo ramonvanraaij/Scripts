@@ -1,0 +1,33 @@
+# Example backup.sources file used by the backup.py Phyton 3 script
+# backup.sources File Format
+#
+#This file specifies the files and directories to be backed up by the `backup.py` Python 3 script.
+#
+#**File Paths:**
+#
+# - List the full paths to individual files you want to back up.
+# - Include one path per line, without leading or trailing whitespace.
+#
+#**Directory Paths:**
+#
+# - List the full paths to directories you want to back up recursively.
+# - Include one path per line, without leading or trailing whitespace.
+# - Do not include a trailing slash at the end of the directory path.
+#
+#**Note:**
+#
+# - This file format allows for easy maintenance and scaling of your backup configuration.
+# - Ensure proper file permissions exist for the script to access the listed files and directories.
+# - Empty lines within this file will cause the backup.py script to fail.
+#
+# **Examples:**
+# # Directories
+# /var/spool/cron/crontabs
+# /root/scripts
+# # Files
+# /etc/memcached.conf
+# /etc/ssmtp/ssmtp.conf
+# /root/.bashrc
+# /etc/cron-apt/config
+# /etc/hosts
+#
