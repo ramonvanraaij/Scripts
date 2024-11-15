@@ -18,7 +18,6 @@
 #
 # - This file format allows for easy maintenance and scaling of your backup configuration.
 # - Ensure proper file permissions exist for the script to access the listed files and directories.
-# - Empty lines within this file will cause the backup.py script to fail.
 #
 # **Examples:**
 # # Directories
