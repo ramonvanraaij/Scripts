@@ -25,10 +25,10 @@ import datetime
 # Define variables
 backupdir = "path_to_backupdir/gitbackup/rootfs/"
 ignore_comment = "#"  # Lines starting with this character will be ignored
-backupsource = "path_to_backupsource/Scripts/backup.sources"  # Replace with your actual source file name
+backupsource = "path_to_backup.sources_file/backup.sources"  # Replace with your actual source file name
 
 def remove_last_dir(path):
-    """Removes the last directory component from a given path."""
+    # Removes the last directory component from a given path.
     if not path:
         return ""  # Handle empty paths
 
