@@ -162,7 +162,7 @@ fi
 if ask_yes_no "Do you want to install Bluetooth support? (y/n)"; then
   # Install Bluetooth packages
   sudo pacman -Sy --needed bluez bluez-utils bluez-deprecated-tools --noconfirm
-  
+
   # Ask if the user wants to start and enable Bluetooth
   if ask_yes_no "Do you want to start Bluetooth and enable it at boot time? (y/n)"; then
     sudo systemctl enable --now bluetooth
@@ -171,9 +171,9 @@ fi
 
 # Ask if the user wants to install fish and use it as the current user
 if ask_yes_no "Do you want to install the friendly interactive shell (fish) and use it as the current user? (y/n)"; then
-  # Install fish
-  sudo pacman -Sy --needed fish --noconfirm
-
+  # Install fish & bat (a cat clone)
+  sudo pacman -Sy --needed fish bat --noconfirm
+  sudo ln -s /usr/bin/bat /usr/bin/batcat
   # Add fish to ~/.bashrc
   echo "# fish: friendly interactive shell" >> ~/.bashrc
   echo "exec fish" >> ~/.bashrc
