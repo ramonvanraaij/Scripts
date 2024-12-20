@@ -26,7 +26,7 @@ if ! command -v yay &> /dev/null; then
 fi
 
 # Install snapd and apparmor
-yay -S snapd apparmor
+yay -S snapd apparmor squashfs-tools
 
 # Enable and start snapd systemd unit
 sudo systemctl enable --now snapd.socket
