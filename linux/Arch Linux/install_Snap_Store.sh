@@ -47,22 +47,23 @@ if [ ! -L /snap ]; then
   # Install snapd and apparmor
   yay -S --noconfirm snapd apparmor squashfs-tools
 
-  # Enable and start snapd systemd unit
-  sudo systemctl enable --now snapd.socket
-  sleep 2 # Sleep time, might not be necessary at all
-
-  # Enable and start apparmor systemd unit
-  sudo systemctl enable --now snapd.apparmor.service
-
   # Create /snap directory if it doesn't exist
   sudo mkdir -p /var/lib/snapd/snap
 
   # Enable classic snap support
   sudo ln -s /var/lib/snapd/snap /snap
 
-  sleep 2 # Sleep time, might not be necessary at all
+  # Enable and start apparmor systemd unit
+  sudo systemctl enable --now snapd.apparmor.service
+  sleep 5 # Sleep time, might not be necessary at all
+
+  # Enable and start snapd systemd unit
+  sudo systemctl enable --now snapd.socket
+  sleep 15 # Sleep time, might not be necessary at all
+  echo "waiting 15 seconds for snap to get ready..."
+
 else
-    echo "/snap symlink already exists. Skipping snapd installation and symlink creation."
+  echo "/snap symlink already exists. Skipping snapd installation and symlink creation."
 fi
 
 # Install Snap Store
