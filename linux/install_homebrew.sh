@@ -31,10 +31,11 @@ if curl -fsSL https://raw.githubusercontent.com/Linuxbrew/install/master/install
   # Add configuration to the appropriate shell profile
   echo '# Homebrew' >> "$shell_profile"
   echo '[ -d /home/linuxbrew/.linuxbrew ] && eval $(/home/linuxbrew/.linuxbrew/bin/brew shellenv)' >> "$shell_profile"
-  export XDG_DATA_DIRS="/home/linuxbrew/.linuxbrew/share:$XDG_DATA_DIRS"
+  echo 'export XDG_DATA_DIRS="/home/linuxbrew/.linuxbrew/share:$XDG_DATA_DIRS"' >> "$shell_profile"
 
   # Make it working right away
   [ -d /home/linuxbrew/.linuxbrew ] && eval $(/home/linuxbrew/.linuxbrew/bin/brew shellenv)
+  export XDG_DATA_DIRS="/home/linuxbrew/.linuxbrew/share:$XDG_DATA_DIRS"
 
   echo "Please open a new terminal window for the changes to take effect."
   echo "Run 'brew doctor' to verify your Homebrew installation."
