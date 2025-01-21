@@ -15,6 +15,6 @@ These scripts are provided "as is" without warranty of any kind, express or impl
 
 ## Copyright
 
-Copyright (c) 2024 Rámon van Raaij
+Copyright (c) 2024-2025 Rámon van Raaij
 
 This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
