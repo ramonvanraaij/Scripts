@@ -9,8 +9,6 @@
 # install_Snap_Store.sh - This script installs snapd, apparmor, squashfs-tools and the Snap Store  on Arch Linux.
 # It installs yay if needed and creates a symlink to /var/lib/snapd/snap for classic snap support.
 
-#!/bin/bash
-
 # Check if yay is installed
 if ! command -v yay &> /dev/null; then
   echo "yay is not installed."
