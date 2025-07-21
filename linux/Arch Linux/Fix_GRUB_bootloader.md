@@ -4,7 +4,7 @@ This is used after Windows 11 Pro updates the boatloader and breaks GRUB.
 
 ### List information about all available block devices
 `lsblk -p`
-### Open the LUKS device `/dev/nvme0n1p5` and sets up a mapping `root` aftersuccessful verification of the supplied passphrase.
+### Open the LUKS device `/dev/nvme0n1p5` and sets up a mapping `root` after successful verification of the supplied passphrase.
 `cryptsetup open /dev/nvme0n1p5 root`
 ### Create the directory `/mnt/rootfs`
 `mkdir /mnt/rootfs`
