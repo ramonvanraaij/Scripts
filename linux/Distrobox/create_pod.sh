@@ -15,49 +15,58 @@ create_pod() {
     echo "1: AlmaLinux OS"
     echo "2: Arch Linux"
     echo "3: Debian"
-    echo "4: Ubuntu"
-    read -p "Choose OS (1, 2, 3, 4): " choice
+    echo "4: Kali Linux"
+    echo "5: Ubuntu"
+    read -p "Choose OS (1, 2, 3, 4, 5): " choice
 
     # Validate user input
-    if [[ "$choice" =~ ^(1|2|3|4)$ ]]; then
+    if [[ "$choice" =~ ^(1|2|3|4|5|6)$ ]]; then
       break
     else
-      echo "Invalid choice. Please enter '1', '2', '3' or '4'."
+      echo "Invalid choice. Please enter '1', '2', '3', '4', or '5'."
     fi
   done
 
   # Set pod name and OS based on chosen number
   case "$choice" in
-    1)
-      #pod_name="almalinux"
-      os="almalinux"
-      package_manager="dnf"
-      package_list="bat fish ugrep eza htop wget"
-      fastfetch_install="rpm"
-      ;;
-    2)
-      #pod_name="archlinux"
-      os="archlinux"
-      package_manager="pacman"
-      package_list="bat fish ugrep eza htop wget ttf-hack-nerd fastfetch"
-      ;;
-    3)
-      #pod_name="debian"
-      os="debian"
-      package_manager="apt"
-      package_list="bat fish ugrep exa htop wget fonts-hack-ttf"
-      fastfetch_install="deb"
-      ;;
-    4)
-      #pod_name="ubuntu"
-      os="ubuntu"
-      package_manager="apt"
-      package_list="bat fish ugrep eza htop wget fonts-hack-ttf"
-      fastfetch_install="deb"
-      ;;
+  1)
+    #pod_name="almalinux"
+    os="almalinux"
+    package_manager="dnf"
+    package_list="bat fish ugrep eza htop wget"
+    fastfetch_install="rpm"
+    ;;
+  2)
+    #pod_name="archlinux"
+    os="archlinux"
+    package_manager="pacman"
+    package_list="bat fish ugrep eza htop wget ttf-hack-nerd fastfetch"
+    ;;
+  3)
+    #pod_name="debian"
+    os="debian"
+    package_manager="apt"
+    package_list="bat fish ugrep exa htop wget fonts-hack-ttf"
+    fastfetch_install="deb"
+    ;;
+  4)
+    pod_name="kali-linux"
+    os="kali-rolling"
+    package_manager="apt"
+    package_list="bat fish ugrep eza htop wget fonts-hack-ttf kali-linux-headless kali-linux-large"
+    fastfetch_install="deb"
+    ;;
+
+  5)
+    #pod_name="ubuntu"
+    os="ubuntu"
+    package_manager="apt"
+    package_list="bat fish ugrep eza htop wget fonts-hack-ttf"
+    fastfetch_install="deb"
+    ;;
   esac
 
-# Ask for a pod name (optional)
+  # Ask for a pod name (optional)
   while true; do
     read -p "Enter the name of this pod (leave blank for default): " pod_name
 
@@ -65,11 +74,11 @@ create_pod() {
     if [[ -n "$pod_name" && ! "$pod_name" =~ ^[[:alnum:].\_\-]+$ ]]; then
       echo "Invalid pod name. Please use only letters, numbers, hyphens, underscores, and periods."
     else
-      echo "Entered pod name: $pod_name"  # Added to see captured input
+      echo "Entered pod name: $pod_name" # Added to see captured input
       # If pod name is empty, set it to the OS name
       if [[ -z "$pod_name" ]]; then
         pod_name="$os"
-        echo "Pod name is empty, set to OS name: $pod_name"  # Added to see empty check
+        echo "Pod name is empty, set to OS name: $pod_name" # Added to see empty check
       fi
       break
     fi
