@@ -16,15 +16,22 @@ if [[ ! $(id -u) -eq 0 ]]; then
   exit 1
 fi
 
-# Check if the system is AlmaLinux 9
-if [[ $(rpm -q --queryformat "%{version}" -qf /etc/redhat-release) != "9" ]]; then
+# Check if the system is an AlmaLinux 9.x release
+os_version=$(rpm -q --queryformat "%{version}" -qf /etc/redhat-release)
+
+# Use pattern matching: checks if $os_version is "9" or starts with "9."
+if [[ ! ($os_version == "9" || $os_version == 9.*) ]]; then
   echo "Error: This script is only compatible with AlmaLinux 9."
+  echo "Detected version: $os_version"
   exit 1
 fi
+
+echo "AlmaLinux 9 detected. Proceeding..."
 
 ## Setting up custom DNS cache:
 
 # This script requires disabling SELinux. Are you sure you want to proceed? (y/N)
+echo "This script requires disabling SELinux. Are you sure you want to proceed? (y/N)"
 read -r disable_selinux
 if [[ ! $disable_selinux =~ ^[Yy]$ ]]; then
   echo "Exiting script. Please disable SELinux if you want to continue."
@@ -69,19 +76,124 @@ done
 # Installing downloaded packages
 yum install ./*.rpm
 
-# Enabling and starting djbdns service
-chkconfig --add djbdns
-chkconfig djbdns on
-sh -cf '/bin/svscanboot &'
+# This part of the script creates the systemd service unit for svscan.
+# Define the path for the new service file
+SERVICE_FILE="/etc/systemd/system/svscan.service"
 
-# Restarting djbdns service
-service djbdns restart
+echo "Creating systemd service file for svscan at ${SERVICE_FILE}..."
+
+# The 'EOF' delimiter is quoted to prevent shell expansion of any characters like $ inside the block.
+cat << 'EOF' > "${SERVICE_FILE}"
+[Unit]
+Description=daemontools Service Supervisor (svscan)
+Documentation=http://cr.yp.to/daemontools/svscan.html
+After=local-fs.target
+
+[Service]
+# The command to start svscan, telling it to manage the /service directory.
+ExecStart=/usr/bin/svscan /service
+
+# Restart the service automatically if it fails.
+# This is critical for a supervisor process.
+Restart=on-failure
+RestartSec=5s
+
+# Standard output and error will go to the systemd journal.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+# This makes it part of the default boot target, ensuring it starts on boot.
+WantedBy=multi-user.target
+EOF
+
+# Check if the file was created successfully
+if [ $? -eq 0 ]; then
+    # Set appropriate permissions for the service file
+    chmod 644 "${SERVICE_FILE}"
+    echo "Successfully created and configured ${SERVICE_FILE}"
+    echo ""
+    echo "--------------------------------------------------------"
+    echo "IMPORTANT: Now you must reload systemd and enable the service:"
+    echo "--------------------------------------------------------"
+    echo "1. sudo systemctl daemon-reload"
+    echo "2. sudo systemctl enable svscan.service"
+    echo "3. sudo systemctl start svscan.service"
+    echo ""
+    echo "You can check its status with: systemctl status svscan.service"
+    echo ""
+else
+    echo "Error: Failed to create ${SERVICE_FILE}" >&2
+    exit 1
+fi
+
+# Enabling and starting djbdns service
+sudo systemctl daemon-reload
+sudo systemctl enable svscan.service
+sudo systemctl start svscan.service
 
 # Check if svscan is running
 if ! ps -A | grep -q svscan; then
   echo "Error: svscan is not running."
   exit 1
 fi
+
+# This part of the script creates the systemd service unit for djbdns.
+# It must be run with root privileges (e.g., using sudo) to write to /etc/systemd/system/.
+
+# Define the path for the new service file
+SERVICE_FILE="/etc/systemd/system/djbdns.service"
+
+echo "Creating systemd service file for djbdns at ${SERVICE_FILE}..."
+
+# The 'EOF' delimiter is quoted to prevent shell expansion of any characters like $ inside the block.
+cat << 'EOF' > "${SERVICE_FILE}"
+[Unit]
+Description=djbdns (tinydns, axfrdns, dnscache) via daemontools
+Documentation=https://cr.yp.to/djbdns.html
+After=network.target
+# If you have a service file for svscan itself, it's good practice to require it:
+Requires=svscan.service
+After=svscan.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+# The /bin/sh -c wrapper is needed to handle the shell globbing (*)
+ExecStart=/bin/sh -c '/usr/bin/svc -u /service/dnscache /service/tinydns /service/axfrdns'
+ExecStop=/bin/sh -c '/usr/bin/svc -d /service/dnscache /service/tinydns /service/axfrdns'
+ExecReload=/bin/sh -c '/usr/bin/svc -t /service/dnscache /service/tinydns /service/axfrdns'
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Check if the file was created successfully
+if [ $? -eq 0 ]; then
+    # Set appropriate permissions for the service file
+    chmod 644 "${SERVICE_FILE}"
+    echo "Successfully created and configured ${SERVICE_FILE}"
+    echo ""
+    echo "--------------------------------------------------------"
+    echo "IMPORTANT: Now you must reload systemd and enable the service:"
+    echo "--------------------------------------------------------"
+    echo "1. sudo systemctl daemon-reload"
+    echo "2. sudo systemctl enable djbdns.service"
+    echo "3. sudo systemctl start djbdns.service"
+    echo ""
+else
+    echo "Error: Failed to create ${SERVICE_FILE}" >&2
+    exit 1
+fi
+
+# Enabling and starting djbdns service
+sudo systemctl daemon-reload
+sudo systemctl enable --now djbdns.service
+#sh -cf '/bin/svscanboot &'
+
+# Restarting djbdns service
+systemctl restart djbdns.service
 
 # Setting local nameserver
 echo "nameserver 127.0.0.1" > /etc/resolv.conf
@@ -93,15 +205,13 @@ if ! ping -c 2 google.nl &> /dev/null; then
   exit 1
 fi
 
-# Adding djbdns startup script to rc.local
-echo "sh -cf '/bin/svscanboot &'" >> /etc/rc.d/rc.local
-chmod +x /etc/rc.d/rc.local
-
 ## Creating a DNS server:
 
 # Cleaning up previous configuration
 rm -rf /var/djbdns/tinydns
 rm -f /service/tinydns
+rm -rf /var/djbdns/axfrdns
+rm -f /service/axfrdns
 
 # Enter the IP address of this DNS server:
 read -p "Enter the IP address of this DNS server: " dns_server_ip
