@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2024 Rámon van Raaij
+# Copyright (c) 2024-2025 Rámon van Raaij
 
 # License: MIT
 
@@ -45,7 +45,7 @@ if [[ $disable_selinux =~ ^[Yy]$ ]]; then
 fi
 
 # Installing required packages
-yum install chkconfig wget
+yum install chkconfig wget make
 
 # Define the base URL for package downloads
 base_url="https://updates.interworx.com/interworx/8/base/RPMS/9Server/x86_64/"
@@ -129,8 +129,7 @@ fi
 
 # Enabling and starting djbdns service
 sudo systemctl daemon-reload
-sudo systemctl enable svscan.service
-sudo systemctl start svscan.service
+sudo systemctl enable --now svscan.service
 
 # Check if svscan is running
 if ! ps -A | grep -q svscan; then
@@ -190,10 +189,6 @@ fi
 # Enabling and starting djbdns service
 sudo systemctl daemon-reload
 sudo systemctl enable --now djbdns.service
-#sh -cf '/bin/svscanboot &'
-
-# Restarting djbdns service
-systemctl restart djbdns.service
 
 # Setting local nameserver
 echo "nameserver 127.0.0.1" > /etc/resolv.conf
@@ -259,6 +254,9 @@ make
 
 # Link axfrdns service
 ln -s /var/djbdns/axfrdns /service/
+
+# Restarting djbdns service
+systemctl restart djbdns.service
 
 echo "The djbdns setup and configuration is complete."
 echo "If there were no errors, please reboot the system."
