@@ -20,7 +20,7 @@ Save the script content to a file on your PMG server. A common and recommended l
 
 ```bash
 # For example, create and edit the file with nano:  
-nano /usr/local/bin/pmg\_backup.sh
+nano /usr/local/bin/pmg_backup.sh
 
 # Paste the script content into the editor and save the file.
 ```
@@ -80,7 +80,7 @@ Once you've confirmed the script runs successfully, you can schedule it to run a
 
 2. Add a new line to the file to define the schedule. The following example will run the script every day at 2:00 AM:  
 ```bash
-   0 2 \* \* \* /usr/local/bin/pmg\_backup.sh
+   0 2 * * * /usr/local/bin/pmg_backup.sh
 ```
 
 3. Save and close the file. The cron job is now active.
