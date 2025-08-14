@@ -135,15 +135,18 @@ log_message "Successfully created backup: $LATEST_BACKUP_FILE"
 # Step 2: Rotate local backups
 # -----------------------------------------------------------------
 log_message "Rotating local backups in $BACKUP_DIR. Keeping last $MAX_BACKUPS."
-# List all backup files, sort them by name (which is chronological),
-# and get a list of the oldest ones to delete.
-# Using 'find' is safer than parsing 'ls'.
-FILES_TO_DELETE=$(find "$BACKUP_DIR" -maxdepth 1 -type f -name "pmg-backup_*.tgz" | sort | head -n -"$MAX_BACKUPS")
+
+# List files by modification time (newest first), then select all files *after* the number to keep.
+# This is more robust than using 'head'.
+FILES_TO_DELETE=$(ls -1t "$BACKUP_DIR"/pmg-backup_*.tgz | tail -n +$(($MAX_BACKUPS + 1)))
 
 if [[ -n "$FILES_TO_DELETE" ]]; then
     log_message "The following old local backups will be deleted:"
+    # Print the list of files to the console for immediate feedback.
+    echo "$FILES_TO_DELETE"
     # Log the files to be deleted to the email for tracking.
     LOG_MESSAGES+="$FILES_TO_DELETE"$'\n'
+    # Pipe the list of files to be removed.
     echo "$FILES_TO_DELETE" | xargs -r rm
     log_message "Old local backups have been deleted."
 else
