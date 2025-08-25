@@ -1,0 +1,32 @@
+#!/bin/bash
+# apk-autoupdate-cron
+# =================================================================
+# Alpine Linux Automatic Update Cronjob and Logger
+# Copyright (c) 2025 Rámon van Raaij
+# License: MIT
+# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+# =================================================================
+# This script performs the following actions:
+# 1. Runs Alpine Linux's 'apk-autoupdate' tool to check for available updates, installs them and restarts affected services.
+# 2. Prefixes each output line with a timestamp.
+# 3. Logs all output to "/var/log/apk-autoupdate.log".
+#
+# This script is intended to be run as a daily cron job.
+# Installation:
+# 1. Place this script in /etc/periodic/daily/apk-autoupdate.
+# 2. Make it executable: chmod 700 /etc/periodic/daily/apk-autoupdate
+#
+# About apk-autoupdate: Alpine's tool for automatic updates.
+# Package: https://pkgs.alpinelinux.org/package/edge/testing/x86/apk-autoupdate
+# GitHub Repository: https://github.com/jirutka/apk-autoupdate/
+# =================================================================
+
+# Function to run apk-autoupdate and prefix each line with a timestamp
+run_and_log() {
+  apk-autoupdate 2>&1 | while IFS= read -r line; do
+    printf "[%s] %s\n" "$(date '+%a %b %d %H:%M:%S %Z %Y')" "$line"
+  done
+}
+
+# Run the function and redirect all its output to the log file
+run_and_log >> /var/log/apk-autoupdate.log
