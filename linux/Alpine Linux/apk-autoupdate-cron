@@ -9,12 +9,12 @@
 # This script performs the following actions:
 # 1. Runs Alpine Linux's 'apk-autoupdate' tool to check for available updates, installs them and restarts affected services.
 # 2. Prefixes each output line with a timestamp.
-# 3. Logs all output to "/var/log/apk-autoupdate.log".
+# 3. Logs all output to "/var/log/apk-autoupdate-cron.log".
 #
 # This script is intended to be run as a daily cron job.
 # Installation:
-# 1. Place this script in /etc/periodic/daily/apk-autoupdate.
-# 2. Make it executable: chmod 700 /etc/periodic/daily/apk-autoupdate
+# 1. Place this script in "/etc/periodic/daily/".
+# 2. Make it executable: chmod 700 /etc/periodic/daily/apk-autoupdate-cron
 #
 # About apk-autoupdate: Alpine's tool for automatic updates.
 # Package: https://pkgs.alpinelinux.org/package/edge/testing/x86/apk-autoupdate
