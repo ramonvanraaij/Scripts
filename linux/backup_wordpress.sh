@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Copyright (c) 2024 Rámon van Raaij
+# Copyright (c) 2024-2025 Rámon van Raaij
 # License: MIT
 # Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
