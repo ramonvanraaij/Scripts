@@ -135,4 +135,7 @@ echo -e "${COLOR_YELLOW}IMPORTANT NEXT STEPS:${COLOR_RESET}"
 echo "1. Test your NGINX configuration for syntax errors:"
 echo -e "   ${COLOR_GREEN}sudo nginx -t${COLOR_RESET}"
 echo
-echo "2. If 
+echo "2. If the test is successful, gracefully reload NGINX to apply changes:"
+echo -e "   ${COLOR_GREEN}sudo systemctl reload nginx${COLOR_RESET}"
+
+exit 0
