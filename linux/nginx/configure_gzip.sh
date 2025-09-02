@@ -137,5 +137,7 @@ echo -e "   ${COLOR_GREEN}sudo nginx -t${COLOR_RESET}"
 echo
 echo "2. If the test is successful, gracefully reload NGINX to apply changes:"
 echo -e "   ${COLOR_GREEN}sudo systemctl reload nginx${COLOR_RESET}"
+echo "or"
+echo -e "   ${COLOR_GREEN}sudo service nginx reload${COLOR_RESET}"
 
 exit 0
