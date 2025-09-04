@@ -4,7 +4,7 @@
 # IP Address Retrieval Tool
 # Copyright (c) 2025 Rámon van Raaij
 # License: MIT
-# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+# Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 # =================================================================
 # This script is specifically designed as a workaround for the iSH app on iOS,
 # where standard Linux networking commands like "ip a" or "ifconfig" are not

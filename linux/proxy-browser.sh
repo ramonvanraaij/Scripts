@@ -4,7 +4,7 @@
 # SSH SOCKS Proxy Browser Launcher
 # Copyright (c) 2025 Rámon van Raaij
 # License: MIT
-# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+# Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 # =================================================================
 # This script performs the following actions:
 # 1. Establishes an SSH SOCKS proxy connection in the background.
@@ -18,8 +18,8 @@
 # =================================================================
 
 # --- Configuration ---
-SSH_HOST="192.168.178.108"
-PROXY_PORT="8080"
+SSH_HOST="192.168.0.123"
+PROXY_PORT="1080"
 
 # Set the command for the browser you want to use.
 # Examples:
