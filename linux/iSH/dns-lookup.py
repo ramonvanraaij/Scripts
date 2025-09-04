@@ -4,7 +4,7 @@
 # DNS Lookup Tool
 # Copyright (c) 2025 Rámon van Raaij
 # License: MIT
-# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+# Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 # =================================================================
 # This script performs a DNS lookup for a given domain name to find
 # its A records (IPv4 addresses).

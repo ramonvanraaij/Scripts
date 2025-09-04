@@ -1,222 +1,278 @@
-#!/bin/bash
-
+#!/usr/bin/env bash
+# backup_wordpress.sh
+# =================================================================
+# WordPress Backup Script with Auto-Dependency Check & Rotation
 # Copyright (c) 2024-2025 Rámon van Raaij
 # License: MIT
-# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+# Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+# =================================================================
+# This script automates WordPress backups with robust error handling and logging.
+# - Detects the OS and offers to install missing dependencies (zstd, rsync, etc.).
+# - Creates compressed backups of the database and website files using Zstandard.
+# - Rotates backups locally and on a remote server to save space.
+# - Syncs backups to a remote server using rsync over SSH.
+# - Sends detailed email notifications for backup success or failure.
+# - Includes pre-flight checks for required commands, permissions, and file sizes.
 #
-# backup_wordpress.sh (v3 - Example Config)
-# This script automates WordPress website backups with improved error handling and logging.
-# - Creates compressed backups of both the database and website files using Zstandard compression.
-# - Checks for errors during the backup process and logs detailed, timestamped information.
-# - Appends to the log file instead of overwriting it.
-# - Optionally sends email notifications for backup success or failure.
-# - Rotates backups locally and optionally on a remote server.
-# - Includes pre-flight checks for required commands and permissions.
-#
-# Crontab example:
-#  0 1   * * * /path_to_script/backup_wordpress.sh
+# Crontab example to run daily at 1:00 AM:
+# 0 1 * * * /path/to/your/script/backup_wordpress.sh
+# =================================================================
 
-# --- CONFIGURATION ---
-SITE_NAME="example.com"                        # Site name (customize as needed)
-SITE_ROOT="/var/www/html"                      # Path to your WordPress root directory
-BACKUP_DIR="/home/user/backups"                # Location to store backups
-MIN_DB_BACKUP_SIZE=102400                      # Minimum allowed database backup size in bytes (e.g., 100KB)
-LOG_FILE="$BACKUP_DIR/${SITE_NAME}-wp-backup.log" # Path for the log file
-MAX_BACKUPS=7                                  # Maximum number of backup SETS to keep locally
+# --- Script Configuration ---
+# Exit on error, treat unset variables as an error, and fail on piped command errors.
+set -o errexit -o nounset -o pipefail
 
-# Remote Server rsync configuration (Optional)
-RSYNC_ENABLED="false"                          # Set to true to enable rsync to remote server
-REMOTE_HOST="remote-backup-server.local"       # Remote server hostname
-REMOTE_USER="backupuser"                       # Username for remote server
-REMOTE_DIR="/mnt/backups/websites"             # Remote directory to store backups
-REMOTE_SSH_KEY="/home/user/.ssh/id_rsa"        # Path to your SSH key for passwordless login
-REMOTE_MAX_BACKUPS=30                          # Maximum number of backup SETS to keep on remote server
+# --- User-defined Variables ---
 
-# Email configuration (Optional)
-EMAIL_ENABLED="false"                          # Set to true to enable email notifications
-from="wordpress-backup@example.com"            # Replace with your desired from address
-recipient="admin@example.com"                  # Replace with your desired recipient address
+# Site Configuration
+readonly SITE_NAME="example.com"
+readonly SITE_ROOT="/var/www/html"
 
-# --- SCRIPT START ---
+# Backup Configuration
+readonly BACKUP_DIR="/home/user/backups"
+readonly MAX_BACKUPS=7
+readonly MIN_DB_BACKUP_SIZE=102400 # Min DB backup size in bytes (e.g., 100KB)
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
-# Treat unset variables as an error when substituting.
-set -u
-# Pipelines return the exit status of the last command to fail.
-set -o pipefail
+# Remote Server rsync Configuration
+readonly RSYNC_ENABLED="true"
+readonly REMOTE_HOST="remote-backup-server.local"
+readonly REMOTE_USER="backupuser"
+readonly REMOTE_DIR="/mnt/backups/websites"
+readonly REMOTE_SSH_KEY="/home/user/.ssh/id_rsa"
+readonly REMOTE_MAX_BACKUPS=30
 
-# --- FUNCTIONS ---
+# Email Notification Configuration
+readonly EMAIL_ENABLED="true"
+readonly FROM_ADDRESS="WordPress Backup <wordpress-backup@example.com>"
+readonly RECIPIENT_ADDRESS="admin@example.com"
 
-# Function for logging with timestamp.
-# Uses 'tee -a' to both display the message and append it to the log file.
-log() {
-    local MSG="$1"
-    printf "[%s] %s\n" "$(date '+%a %b %d %H:%M:%S %Z %Y')" "$MSG" | tee -a "$LOG_FILE"
+# --- Global Variables ---
+LOG_BODY=""
+SCRIPT_STATUS="SUCCESS"
+readonly LOG_FILE="${BACKUP_DIR}/${SITE_NAME}-wp-backup.log"
+
+# --- Functions ---
+
+# Logs a message to the console, appends it to the log file, and adds it to the email body.
+log_message() {
+    local message
+    message=$(printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1")
+    # Use 'echo' instead of 'echo -n' to ensure newlines are printed.
+    echo "${message}" | tee -a "${LOG_FILE}"
+    LOG_BODY+="${message}"
 }
 
-# Function for handling errors.
-handle_error() {
-    local ERROR_MSG="$1"
-    log "ERROR: $ERROR_MSG"
-
-    if [[ "$EMAIL_ENABLED" == "true" ]]; then
-        local subject="WordPress Backup of $SITE_NAME Failed"
-        local email_body="An error occurred during the WordPress backup for $SITE_NAME.
-
-Error details:
-$ERROR_MSG
-
-Please check the log file for more information: $LOG_FILE"
-        echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$email_body" | sendmail -f "$from" -t
+# Sends the final email notification using sendmail for reliability.
+send_notification() {
+    if [[ "${EMAIL_ENABLED}" != "true" ]]; then
+        return
     fi
-    log "--- Backup script finished with an error. ---"
-    exit 1
-}
+    log_message "Sending email notification to ${RECIPIENT_ADDRESS}..."
+    local subject="WordPress Backup Status: ${SCRIPT_STATUS} on $(hostname) for ${SITE_NAME}"
 
-# --- MAIN SCRIPT ---
+    /usr/sbin/sendmail -t -oi <<EOF
+From: ${FROM_ADDRESS}
+To: ${RECIPIENT_ADDRESS}
+Subject: ${subject}
 
-# Create backup directory if it doesn't exist.
-mkdir -p "$BACKUP_DIR"
-
-log "--- Starting WordPress Backup for $SITE_NAME ---"
-
-# Pre-flight checks
-log "Performing pre-flight checks..."
-# 1. Check for required commands
-for cmd in mysqldump zstd tar rsync sendmail ssh; do
-    if ! command -v "$cmd" &> /dev/null; then
-        handle_error "Required command '$cmd' is not installed or not in PATH."
-    fi
-done
-
-# 2. Validate essential directories
-if [[ ! -d "$SITE_ROOT" ]]; then
-    handle_error "WordPress site root directory does not exist ($SITE_ROOT)."
-fi
-if [[ ! -w "$BACKUP_DIR" ]]; then
-    handle_error "Backup directory is not writable ($BACKUP_DIR)."
-fi
-
-# 3. Check for wp-config.php existence
-if [[ ! -f "$SITE_ROOT/wp-config.php" ]]; then
-    handle_error "Could not locate wp-config.php in $SITE_ROOT. Is this a valid WordPress installation?"
-fi
-
-# 4. Check for SSH key existence if rsync is enabled
-if [[ "$RSYNC_ENABLED" == "true" && ! -r "$REMOTE_SSH_KEY" ]]; then
-    handle_error "SSH key file is not readable or does not exist at the specified path ($REMOTE_SSH_KEY)."
-fi
-log "Pre-flight checks passed."
-
-# Rotate local backups BEFORE creating new ones to prevent accidental deletion.
-log "Rotating local backups... keeping last $MAX_BACKUPS sets."
-find "$BACKUP_DIR" -maxdepth 1 -type f -name "${SITE_NAME}-wp_*" | sort -r | tail -n +$((2 * MAX_BACKUPS + 1)) | xargs -r rm -f
-log "Local backup rotation complete."
-
-# Extract database credentials from wp-config.php
-log "Extracting database credentials from wp-config.php..."
-DB_NAME=$(grep "DB_NAME" "$SITE_ROOT/wp-config.php" | cut -d "'" -f 4)
-DB_USER=$(grep "DB_USER" "$SITE_ROOT/wp-config.php" | cut -d "'" -f 4)
-DB_PASSWORD=$(grep "DB_PASSWORD" "$SITE_ROOT/wp-config.php" | cut -d "'" -f 4)
-DB_HOST=$(grep "DB_HOST" "$SITE_ROOT/wp-config.php" | cut -d "'" -f 4)
-
-# Validate that database credentials were extracted
-if [[ -z "$DB_NAME" || -z "$DB_USER" || -z "$DB_PASSWORD" || -z "$DB_HOST" ]]; then
-    handle_error "Failed to extract one or more database credentials from wp-config.php."
-fi
-log "Successfully extracted database credentials."
-
-# Define date stamp and filenames
-DATE_STAMP=$(date +%Y-%m-%d)
-DB_BACKUP_FILE="$BACKUP_DIR/${SITE_NAME}-wp_db-${DATE_STAMP}.sql.zst"
-FILES_BACKUP_FILE="$BACKUP_DIR/${SITE_NAME}-wp_files-${DATE_STAMP}.tar.zst"
-
-# Backup database
-log "Starting database backup for '$DB_NAME'..."
-if ! mysqldump -u "$DB_USER" -p"$DB_PASSWORD" -h "$DB_HOST" "$DB_NAME" | zstd --adapt > "$DB_BACKUP_FILE"; then
-    rm -f "$DB_BACKUP_FILE" # Clean up empty/failed file
-    handle_error "Database dump (mysqldump) failed. Check credentials and database server status."
-fi
-log "Database backup created successfully: $DB_BACKUP_FILE"
-
-# Verify database backup size
-log "Verifying database backup size..."
-db_backup_size=$(stat -c%s "$DB_BACKUP_FILE")
-if [[ $db_backup_size -lt $MIN_DB_BACKUP_SIZE ]]; then
-    handle_error "Database backup file size ($db_backup_size bytes) is smaller than the minimum required size ($MIN_DB_BACKUP_SIZE bytes)."
-fi
-log "Database backup size is acceptable ($db_backup_size bytes)."
-
-# Backup website files
-log "Starting website files backup from '$SITE_ROOT'..."
-if ! tar -cf - -C "$SITE_ROOT" . | zstd --adapt > "$FILES_BACKUP_FILE"; then
-    rm -f "$FILES_BACKUP_FILE" # Clean up partial file
-    handle_error "Website files backup (tar) failed."
-fi
-log "Website files backup created successfully: $FILES_BACKUP_FILE"
-
-# Verify website files backup size
-log "Verifying website files backup size..."
-site_root_size_kb=$(du -sk "$SITE_ROOT" | awk '{print $1}')
-backup_file_size_kb=$(du -k "$FILES_BACKUP_FILE" | awk '{print $1}')
-min_backup_size_kb=$((site_root_size_kb / 4)) # 25% of original size
-
-if [[ $backup_file_size_kb -lt $min_backup_size_kb ]]; then
-    handle_error "Website files backup size ($backup_file_size_kb KB) is less than 25% of website root size ($site_root_size_kb KB). Backup may be incomplete."
-fi
-log "Website files backup size is acceptable ($backup_file_size_kb KB)."
-
-# Sync to remote server
-if [[ "$RSYNC_ENABLED" == "true" ]]; then
-    log "Rsync to remote server is enabled."
-    
-    # Define the SSH command to use for both ssh and rsync.
-    # Added StrictHostKeyChecking=no to avoid interactive prompts in cron.
-    SSH_COMMAND="ssh -i $REMOTE_SSH_KEY -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
-    
-    log "Connecting to $REMOTE_USER@$REMOTE_HOST to sync backups..."
-
-    # Ensure remote directory exists
-    $SSH_COMMAND "$REMOTE_USER"@"$REMOTE_HOST" "mkdir -p '$REMOTE_DIR'"
-
-    # Rsync the newly created backup files
-    log "Syncing database backup..."
-    rsync -avz --rsh="$SSH_COMMAND" "$DB_BACKUP_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR"
-
-    log "Syncing website files backup..."
-    rsync -avz --rsh="$SSH_COMMAND" "$FILES_BACKUP_FILE" "$REMOTE_USER@$REMOTE_HOST:$REMOTE_DIR"
-    log "Rsync to remote server completed successfully."
-
-    # Rotate backups on remote server
-    log "Rotating remote backups... keeping last $REMOTE_MAX_BACKUPS sets."
-    if ! $SSH_COMMAND "$REMOTE_USER"@"$REMOTE_HOST" "find '$REMOTE_DIR' -maxdepth 1 -type f -name '${SITE_NAME}-wp_*' | sort -r | tail -n +$((2 * REMOTE_MAX_BACKUPS + 1)) | xargs -r rm -f"; then
-        log "Warning: Failed to rotate backups on remote server. This is a non-critical error."
-    else
-        log "Remote backup rotation complete."
-    fi
-fi
-
-# Final success message and email
-log "--- WordPress Backup for $SITE_NAME Completed Successfully! ---"
-
-# Create the backup summary content for the Email body
-backup_summary=$(cat << EOF
-** WordPress Site Size Information:
-$(du -sh "$SITE_ROOT")
-
-** Backup Files Information:
-* Database Backup File:
-$(ls -lh "$DB_BACKUP_FILE" | awk '{print "Size: " $5 ", File: " $9}')
-* Site Backup File:
-$(ls -lh "$FILES_BACKUP_FILE" | awk '{print "Size: " $5 ", File: " $9}')
+${LOG_BODY}
 EOF
-)
+}
 
-if [[ "$EMAIL_ENABLED" == "true" ]]; then
-    log "Sending success notification email..."
-    subject="WordPress Backup of $SITE_NAME Successful"
-    echo -e "From: $from\nTo: $recipient\nSubject: $subject\n\n$backup_summary" | sendmail -f "$from" -t
-fi
+# Handles script exit, logging the final status and sending a notification.
+cleanup() {
+    if [[ "${SCRIPT_STATUS}" == "SUCCESS" ]]; then
+        log_message "--- WordPress Backup for ${SITE_NAME} Completed Successfully! ---"
+    else
+        log_message "--- Backup script finished with a FAILURE status. ---"
+    fi
+    send_notification
+}
 
-exit 0
+# Handles errors by logging the failed command and line number.
+handle_error() {
+    local line_number=$1
+    local command=$2
+    SCRIPT_STATUS="FAILURE"
+    log_message "ERROR on line ${line_number}: command failed: \`${command}\`"
+    log_message "Aborting script due to critical error."
+}
+
+# Detects the OS and offers to install missing packages.
+check_and_install_dependencies() {
+    log_message "Checking for required dependencies..."
+    local missing_packages=()
+    local os_id=""
+    local pkg_manager=""
+    local install_cmd=""
+
+    if [[ -f /etc/os-release ]]; then
+        # Use awk for better portability than grep -P, especially on BusyBox systems like Alpine.
+        os_id=$(awk -F= '$1=="ID" { gsub(/"/, ""); print $2 }' /etc/os-release)
+    fi
+
+    case "$os_id" in
+        alpine)
+            pkg_manager="apk"
+            install_cmd="sudo apk add"
+            ;;
+        debian|ubuntu)
+            pkg_manager="apt"
+            install_cmd="sudo apt-get install -y"
+            ;;
+        centos|rhel|rocky|almalinux)
+            pkg_manager="yum/dnf"
+            install_cmd="sudo yum install -y"
+            if command -v dnf &>/dev/null; then
+                install_cmd="sudo dnf install -y"
+            fi
+            ;;
+        *)
+            log_message "WARNING: Unsupported OS detected. Cannot auto-install dependencies."
+            return
+            ;;
+    esac
+
+    local dependencies=( "mysqldump:mariadb-client" "zstd:zstd" "tar:tar" "rsync:rsync" "sendmail:sendmail" "ssh:openssh-client" )
+    if [[ "$os_id" == "centos" || "$os_id" == "rhel" || "$os_id" == "rocky" || "$os_id" == "almalinux" ]]; then
+        dependencies=( "mysqldump:mariadb" "zstd:zstd" "tar:tar" "rsync:rsync" "sendmail:postfix" "ssh:openssh-clients" )
+    elif [[ "$os_id" == "alpine" ]]; then
+        dependencies=( "mysqldump:mariadb-client" "zstd:zstd" "tar:tar" "rsync:rsync" "sendmail:ssmtp" "ssh:openssh-client" ) # ssmtp provides sendmail
+    fi
+    
+    for item in "${dependencies[@]}"; do
+        IFS=":" read -r cmd pkg <<< "$item"
+        if ! command -v "$cmd" &> /dev/null && ! command -v "mariadb-dump" &> /dev/null; then
+             missing_packages+=("$pkg")
+        fi
+    done
+
+    if [[ ${#missing_packages[@]} -gt 0 ]]; then
+        log_message "The following required packages are missing: ${missing_packages[*]}"
+        read -p "Would you like to attempt to install them now? (y/n): " choice
+        if [[ "$choice" == "y" || "$choice" == "Y" ]]; then
+            if ! command -v sudo &>/dev/null; then
+                log_message "FATAL: 'sudo' is required to install packages. Please install it or run this script as root."
+                exit 1
+            fi
+            log_message "Installing packages with ${pkg_manager}..."
+            ${install_cmd} "${missing_packages[@]}"
+        else
+            log_message "FATAL: Installation declined. The script cannot continue without required dependencies."
+            exit 1
+        fi
+    fi
+    log_message "All required dependencies are satisfied."
+}
+
+# --- Main Script Logic ---
+main() {
+    trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
+    trap cleanup EXIT
+    
+    mkdir -p "${BACKUP_DIR}"
+    
+    log_message "--- Starting WordPress Backup for ${SITE_NAME} ---"
+    
+    check_and_install_dependencies
+
+    # --- Pre-flight Checks ---
+    log_message "Performing remaining pre-flight checks..."
+    [[ -d "${SITE_ROOT}" ]] || { log_message "FATAL: WordPress root directory does not exist: ${SITE_ROOT}"; exit 1; }
+    [[ -w "${BACKUP_DIR}" ]] || { log_message "FATAL: Backup directory is not writable: ${BACKUP_DIR}"; exit 1; }
+    [[ -f "${SITE_ROOT}/wp-config.php" ]] || { log_message "FATAL: Could not find wp-config.php in ${SITE_ROOT}"; exit 1; }
+    if [[ "${RSYNC_ENABLED}" == "true" && ! -r "${REMOTE_SSH_KEY}" ]]; then
+        log_message "FATAL: SSH key is not readable: ${REMOTE_SSH_KEY}"
+        exit 1
+    fi
+    log_message "Pre-flight checks passed."
+
+    # --- Rotate Local Backups ---
+    log_message "Rotating local backups... keeping last ${MAX_BACKUPS} sets."
+    # Use a portable method to find and rotate backups that works with BusyBox find/sed.
+    local old_dates
+    old_dates=$(find "${BACKUP_DIR}" -maxdepth 1 -type f -name "${SITE_NAME}-wp_*" | \
+        sed 's/.*-\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\..*/\1/' | \
+        sort -ur | tail -n +$((MAX_BACKUPS + 1)))
+        
+    if [[ -n "$old_dates" ]]; then
+        for date in $old_dates; do
+            log_message "Deleting old backup set from ${date}..."
+            find "${BACKUP_DIR}" -maxdepth 1 -type f -name "*${date}*" -print | tee -a "${LOG_FILE}" | xargs -r rm
+        done
+    else
+        log_message "No old local backup sets to rotate."
+    fi
+
+    # --- Extract DB Credentials ---
+    log_message "Extracting database credentials from wp-config.php..."
+    local DB_NAME DB_USER DB_PASSWORD DB_HOST
+    DB_NAME=$(grep "DB_NAME" "${SITE_ROOT}/wp-config.php" | cut -d "'" -f 4)
+    DB_USER=$(grep "DB_USER" "${SITE_ROOT}/wp-config.php" | cut -d "'" -f 4)
+    DB_PASSWORD=$(grep "DB_PASSWORD" "${SITE_ROOT}/wp-config.php" | cut -d "'" -f 4)
+    DB_HOST=$(grep "DB_HOST" "${SITE_ROOT}/wp-config.php" | cut -d "'" -f 4)
+    log_message "Successfully extracted database credentials."
+
+    # --- Determine Dump Command ---
+    local DUMP_COMMAND="mysqldump"
+    if command -v mariadb-dump &> /dev/null; then
+        DUMP_COMMAND="mariadb-dump"
+    fi
+
+    # --- Create Backups ---
+    local DATE_STAMP
+    DATE_STAMP=$(date +%Y-%m-%d)
+    local DB_BACKUP_FILE="${BACKUP_DIR}/${SITE_NAME}-wp_db-${DATE_STAMP}.sql.zst"
+    local FILES_BACKUP_FILE="${BACKUP_DIR}/${SITE_NAME}-wp_files-${DATE_STAMP}.tar.zst"
+
+    log_message "Starting database backup for '${DB_NAME}' using '${DUMP_COMMAND}'..."
+    "${DUMP_COMMAND}" -u"${DB_USER}" -p"${DB_PASSWORD}" -h"${DB_HOST}" "${DB_NAME}" | zstd -T0 > "${DB_BACKUP_FILE}"
+    log_message "Database backup created: ${DB_BACKUP_FILE}"
+    
+    local db_backup_size
+    db_backup_size=$(stat -c%s "${DB_BACKUP_FILE}")
+    if (( db_backup_size < MIN_DB_BACKUP_SIZE )); then
+        log_message "FATAL: DB backup size (${db_backup_size} bytes) is below minimum (${MIN_DB_BACKUP_SIZE} bytes)."
+        exit 1
+    fi
+    log_message "Database backup size is acceptable."
+
+    log_message "Starting website files backup from '${SITE_ROOT}'..."
+    tar -cf - -C "${SITE_ROOT}" . | zstd -T0 > "${FILES_BACKUP_FILE}"
+    log_message "Website files backup created: ${FILES_BACKUP_FILE}"
+
+    # --- Sync to Remote Server ---
+    if [[ "${RSYNC_ENABLED}" != "true" ]]; then
+        log_message "Rsync is disabled. Skipping remote operations."
+    else
+        log_message "Syncing backups to ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}"
+        local ssh_opts=(-i "${REMOTE_SSH_KEY}" -o StrictHostKeyChecking=accept-new)
+        local rsync_opts=(-avz -e "ssh ${ssh_opts[*]}")
+        
+        ssh "${ssh_opts[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "mkdir -p '${REMOTE_DIR}'"
+        rsync "${rsync_opts[@]}" "${DB_BACKUP_FILE}" "${FILES_BACKUP_FILE}" "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_DIR}/"
+        log_message "Rsync to remote server completed."
+        
+        log_message "Rotating remote backups... keeping last ${REMOTE_MAX_BACKUPS} sets."
+        # Use a more robust, multi-line command for remote rotation to avoid segmentation faults on BusyBox.
+        local remote_cmd="
+cd '${REMOTE_DIR}' || exit 1
+OLD_DATES=\$(find . -maxdepth 1 -type f -name '${SITE_NAME}-wp_*' | sed 's/.*-\([0-9]\{4\}-[0-9]\{2\}-[0-9]\{2\}\)\..*/\1/' | sort -ur | tail -n +$((REMOTE_MAX_BACKUPS + 1)))
+if [ -n \"\$OLD_DATES\" ]; then
+    for date in \$OLD_DATES; do
+        echo \"Deleting remote backup set from \${date}...\"
+        find . -maxdepth 1 -name \"*_\${date}.*\" -print -delete
+    done
+else
+    echo \"No old remote backups to delete.\"
+fi"
+        if ! ssh "${ssh_opts[@]}" "${REMOTE_USER}@${REMOTE_HOST}" "${remote_cmd}"; then
+            log_message "WARNING: Failed to rotate remote backups. This is a non-critical error."
+        else
+            log_message "Remote backup rotation complete."
+        fi
+    fi
+}
+
+main "$@"
+

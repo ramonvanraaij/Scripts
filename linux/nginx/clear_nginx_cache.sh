@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # clear_nginx_cache.sh
 # =================================================================
 # NGINX Cache Management Tool
@@ -11,191 +11,278 @@
 # single URL or to clear the entire cache directory.
 #
 # It performs the following actions:
-# 1. Checks for required dependencies like `curl` and WP-CLI.
-# 2. Offers to install missing dependencies with user consent.
-# 3. Flushes both the NGINX and WordPress internal caches.
-# 4. For full cache clearing, it also restarts the NGINX service.
+# 1. Detects the OS (Alpine, Debian, Ubuntu, CentOS, RHEL, etc.).
+# 2. Checks for required dependencies like `curl` and WP-CLI.
+# 3. Offers to install missing dependencies with user consent.
+# 4. Flushes both the NGINX and WordPress internal caches.
+# 5. For full cache clearing, it also safely restarts the NGINX service.
 #
 # Usage:
-# 1. Make the script executable: chmod +x clear_nginx_cache.sh
-# 2. Run the script with sudo:    sudo ./clear_nginx_cache.sh
+# 1. Customize the variables in the "Configuration" section below.
+# 2. Make the script executable: chmod +x clear_nginx_cache.sh
+# 3. Run the script with sudo:   sudo ./clear_nginx_cache.sh
 # =================================================================
 
-# NOTE: This script is designed for use on Alpine Linux.
-# The `apk add` package installation commands must be adapted for
-# other distributions (e.g., `apt-get install` for Debian/Ubuntu or
-# `yum install` for CentOS/RHEL).
+# --- Configuration ---
+readonly CACHE_PATH="/var/cache/nginx/example-site"
+readonly WP_PATH="/var/www/example.com/public_html"
+readonly WP_USER="www-data" # The system user that owns the WordPress files
 
-# --- CONFIGURATION ---
-CACHE_PATH="/var/cache/nginx/example-site"
-WP_PATH="/var/www/example.com/public_html"
-WP_USER="www-data" # The system user that owns the WordPress files
+# --- Script Configuration ---
+# Exit on error, treat unset variables as an error, and fail on piped command errors.
+set -o errexit -o nounset -o pipefail
 
-# --- FUNCTIONS ---
+# --- Global Variables ---
+OS_FAMILY=""
+PKG_MANAGER=""
+PHP_PHAR_PKG=""
+PHP_JSON_PKG=""
 
-# Checks for a dependency and offers to install it if missing.
+# --- Core Functions ---
+
+# Logs a message to the console with a timestamp.
+log_message() {
+    printf '%s - %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1"
+}
+
+# Detects the operating system and sets the appropriate package manager.
+detect_os() {
+    log_message "Detecting operating system..."
+    if ! [ -f /etc/os-release ]; then
+        log_message "FATAL: Cannot detect OS because /etc/os-release is not present." >&2
+        exit 1
+    fi
+
+    # Source the os-release file to get OS info
+    # shellcheck disable=SC1091
+    . /etc/os-release
+    OS_FAMILY=${ID}
+
+    case "${OS_FAMILY}" in
+        alpine)
+            PKG_MANAGER="apk add"
+            # Alpine's package names are typically not versioned by default.
+            PHP_PHAR_PKG="php-phar"
+            PHP_JSON_PKG="php-json"
+            ;;
+        debian|ubuntu)
+            PKG_MANAGER="apt-get install -y"
+            PHP_PHAR_PKG="php-phar"
+            PHP_JSON_PKG="php-json"
+            ;;
+        centos|rhel|rocky|almalinux)
+            if command -v dnf &>/dev/null; then
+                PKG_MANAGER="dnf install -y"
+            else
+                PKG_MANAGER="yum install -y"
+            fi
+            PHP_PHAR_PKG="php-phar"
+            PHP_JSON_PKG="php-json"
+            ;;
+        *)
+            log_message "FATAL: Unsupported operating system detected: '${OS_FAMILY}'." >&2
+            exit 1
+            ;;
+    esac
+    log_message "System detected as '${OS_FAMILY}'. Using '${PKG_MANAGER}' for package installation."
+}
+
+# Installs a package using the detected package manager.
+install_package() {
+    local package_name="$1"
+    log_message "Attempting to install '${package_name}'..."
+    # We are splitting PKG_MANAGER intentionally.
+    # shellcheck disable=SC2086
+    if ! sudo ${PKG_MANAGER} "${package_name}"; then
+        log_message "ERROR: Installation failed. Please install '${package_name}' manually." >&2
+        exit 1
+    fi
+    log_message "Success: ${package_name} has been installed."
+}
+
+# Checks for a command and offers to install its package if missing.
 check_and_install() {
     local command_name="$1"
     local package_name="$2"
-    local message="$3"
+    local description="$3"
 
-    if ! command -v "$command_name" &> /dev/null; then
-        echo "Dependency missing: $message"
-        read -p "Would you like to attempt to install '$package_name' now? (y/n): " choice
-        if [[ "$choice" == "y" ]]; then
-            echo "Installing $package_name..."
-            if ! sudo apk add "$package_name"; then
-                echo "Error: Installation failed. Please install '$package_name' manually and try again." >&2
-                exit 1
-            fi
-            echo "Success: $package_name has been installed."
+    if ! command -v "${command_name}" &>/dev/null; then
+        log_message "Dependency missing: ${description}"
+        read -p "Would you like to attempt to install '${package_name}' now? (y/n): " choice
+        if [[ "${choice}" == "y" ]]; then
+            install_package "${package_name}"
         else
-            echo "Installation declined. The script cannot continue without '$package_name'." >&2
+            log_message "Installation declined. The script cannot continue without '${package_name}'." >&2
             exit 1
         fi
     fi
 }
 
-# Checks for required tools and offers to install them if missing.
-check_and_install_dependencies() {
-    echo "--- Checking for required dependencies ---"
-    
-    # Check for curl
-    check_and_install "curl" "curl" "'curl' is required to download WP-CLI."
-    
-    # Check for the PHP Phar extension
-    if ! php -m | grep -qi 'phar'; then
-        echo "Dependency missing: The 'phar' PHP extension is required."
-        read -p "Would you like to attempt to install php83-phar now? (y/n): " choice
-        if [[ "$choice" == "y" ]]; then
-            echo "Installing php83-phar..."
-            if ! sudo apk add php83-phar || ! php -m | grep -qi 'phar'; then
-                echo "Error: Installation failed. Please install 'php83-phar' manually and try again." >&2
-                exit 1
-            fi
-            echo "Success: php83-phar has been installed."
-        else
-            echo "Installation declined. The script cannot continue." >&2
-            exit 1
-        fi
-    fi
-    
-    # Check for the PHP JSON extension
-    if ! php -m | grep -qi 'json'; then
-        echo "Dependency missing: The 'json' PHP extension is recommended for WP-CLI."
-        read -p "Would you like to attempt to install php83-json now? (y/n): " choice
-        if [[ "$choice" == "y" ]]; then
-            echo "Installing php83-json..."
-            sudo apk add php83-json
-            echo "Success: php83-json has been installed."
-        fi
-    fi
-
-    # Check for the WP-CLI command
-    if ! command -v wp &> /dev/null; then
-        echo "Dependency missing: WP-CLI is not installed."
-        read -p "Would you like to attempt to install WP-CLI now? (y/n): " choice
-        if [[ "$choice" == "y" ]]; then
-            echo "Downloading WP-CLI..."
-            curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
-            if [ ! -f "wp-cli.phar" ]; then
-                echo "Error: Download failed. Please try installing WP-CLI manually." >&2
-                exit 1
-            fi
-            echo "Installing WP-CLI to /usr/local/bin/wp..."
-            chmod +x wp-cli.phar
-            mv wp-cli.phar /usr/local/bin/wp
-            if ! command -v wp &> /dev/null; then
-                echo "Error: Installation failed. Please install WP-CLI manually." >&2
-                exit 1
-            fi
-            echo "Success: WP-CLI has been installed."
-        else
-            echo "Installation declined. The script cannot continue." >&2
-            exit 1
-        fi
-    fi
-    echo "--- All required dependencies are satisfied ---"
-    echo ""
+# Checks if a PHP extension is loaded.
+is_php_ext_loaded() {
+    php -m | grep -qi "$1"
 }
+
+# Checks for a PHP extension and offers to install it if missing.
+check_and_install_php_ext() {
+    local ext_name="$1"
+    local package_name="$2"
+    local is_required="$3"
+
+    if ! is_php_ext_loaded "${ext_name}"; then
+        local required_text="is required"
+        if [[ "$is_required" != "true" ]]; then
+            required_text="is recommended"
+        fi
+        log_message "PHP extension missing: The '${ext_name}' extension ${required_text} for WP-CLI."
+        read -p "Would you like to attempt to install '${package_name}' now? (y/n): " choice
+        if [[ "${choice}" == "y" ]]; then
+            install_package "${package_name}"
+            # Verify it's loaded after installation attempt
+            if ! is_php_ext_loaded "${ext_name}"; then
+                 log_message "ERROR: PHP extension '${ext_name}' still not loaded after installation." >&2
+                 if [[ "$is_required" == "true" ]]; then exit 1; fi
+            fi
+        elif [[ "$is_required" == "true" ]]; then
+            log_message "Installation declined. Script cannot continue." >&2
+            exit 1
+        fi
+    fi
+}
+
+# --- Task-specific Functions ---
 
 # Flushes the WordPress internal caches using WP-CLI.
 purge_wordpress_cache() {
-    echo "Telling WordPress to flush its internal caches..."
-    sudo -u "${WP_USER}" -- wp cache flush --path="${WP_PATH}"
-    if [ $? -ne 0 ]; then
-        echo "Warning: WP-CLI command failed. Please check permissions and configuration." >&2
+    log_message "Flushing WordPress internal object cache..."
+    # Use a non-critical approach; cache flush can fail if no object cache is configured.
+    if ! sudo -u "${WP_USER}" -- wp cache flush --path="${WP_PATH}"; then
+        log_message "WARNING: 'wp cache flush' failed. This is often safe if no persistent object cache is used."
     fi
 }
 
-# Restarts the Nginx service.
+# Restarts the Nginx service using the appropriate command.
 restart_nginx() {
-    echo "Restarting Nginx to apply changes and ensure stability..."
-    service nginx restart
-    if [ $? -eq 0 ]; then
-        echo "Success: Nginx was restarted."
+    log_message "Restarting Nginx service..."
+    if command -v systemctl &>/dev/null; then
+        systemctl restart nginx
+    elif command -v service &>/dev/null; then
+        service nginx restart
     else
-        echo "Error: Nginx failed to restart. Please check the Nginx error logs." >&2
+        log_message "ERROR: Could not find 'systemctl' or 'service' to restart Nginx." >&2
+        return 1
     fi
+    log_message "Success: Nginx restart command issued."
 }
 
-# --- SCRIPT LOGIC ---
+# Checks for all required tools and offers to install them if missing.
+run_dependency_checks() {
+    log_message "--- Checking for required dependencies ---"
+    detect_os
+    check_and_install "curl" "curl" "'curl' is required to download WP-CLI."
+    check_and_install_php_ext "phar" "${PHP_PHAR_PKG}" "true"
+    check_and_install_php_ext "json" "${PHP_JSON_PKG}" "false"
 
-# Check if the script is run as root first.
-if [[ $EUID -ne 0 ]]; then
-   echo "This script must be run as root. Please use 'sudo'." >&2
-   exit 1
-fi
-
-# Run dependency checks.
-check_and_install_dependencies
-
-echo "Select an option:"
-echo "1. Clear cache for a single URL"
-echo "2. Clear the entire cache (will restart Nginx)"
-read -p "Enter your choice (1 or 2): " choice
-
-case $choice in
-    1)
-        read -p "Enter the full URL to clear: " URL
-        if [[ "$URL" != "https://"* ]]; then
-            echo "Error: The URL must start with 'https://'." >&2; exit 1;
-        fi
-
-        SCHEME="https"
-        HOST=$(echo "$URL" | cut -d'/' -f3)
-        REQUEST_URI="${URL#*$HOST}"; REQUEST_URI=${REQUEST_URI:-/}
-        CACHE_KEY="${SCHEME}GET${HOST}${REQUEST_URI}"
-        MD5_HASH=$(echo -n "$CACHE_KEY" | md5sum | awk '{print $1}')
-        CACHE_FILE_PATH="${CACHE_PATH}/${MD5_HASH: -1:1}/${MD5_HASH: -3:2}/${MD5_HASH}"
-
-        echo "----------------------------------------"
-        if [ -f "$CACHE_FILE_PATH" ]; then
-            echo "Step 1: Removing Nginx cache file..."
-            rm -f "$CACHE_FILE_PATH"
-            echo "Success: Nginx cache file removed."
-            echo "Step 2: Syncing application state..."
-            purge_wordpress_cache
+    if ! command -v wp &>/dev/null; then
+        log_message "Dependency missing: WP-CLI is not installed."
+        read -p "Would you like to attempt to install WP-CLI now? (y/n): " choice
+        if [[ "${choice}" == "y" ]]; then
+            log_message "Downloading WP-CLI..."
+            curl -O https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar
+            chmod +x wp-cli.phar
+            sudo mv wp-cli.phar /usr/local/bin/wp
+            if ! command -v wp &>/dev/null; then
+                log_message "ERROR: WP-CLI installation failed. Please install it manually." >&2
+                exit 1
+            fi
+            log_message "Success: WP-CLI has been installed to /usr/local/bin/wp."
         else
-            echo "Notice: Nginx cache file not found. No action taken."
+            log_message "Installation declined. The script cannot continue." >&2
+            exit 1
         fi
-        echo "----------------------------------------"
-        ;;
-    2)
-        read -p "This will delete all Nginx cache files, flush WordPress, AND restart Nginx. Are you sure? (yes/no): " confirm
-        if [[ "$confirm" == "yes" ]]; then
-            echo "Step 1: Clearing all Nginx cache files..."
-            rm -rf "${CACHE_PATH}"/*
-            echo "Success: Nginx cache directory cleared."
-            echo "Step 2: Syncing application state..."
-            purge_wordpress_cache
-            echo "Step 3: Finalizing with Nginx restart..."
-            restart_nginx
-        else
-            echo "Operation cancelled."
-        fi
-        ;;
-    *)
-        echo "Invalid choice. Please enter 1 or 2." >&2; exit 1;
-        ;;
-esac
+    fi
+    log_message "--- All required dependencies are satisfied ---"
+    echo ""
+}
+
+
+# --- Main Script Logic ---
+main() {
+    if [[ $EUID -ne 0 ]]; then
+       log_message "FATAL: This script must be run as root. Please use 'sudo'." >&2
+       exit 1
+    fi
+
+    run_dependency_checks
+
+    echo "NGINX Cache Management Tool"
+    echo "---------------------------"
+    echo "1. Clear cache for a single URL"
+    echo "2. Clear the ENTIRE cache (will restart Nginx)"
+    read -p "Enter your choice (1 or 2): " choice
+
+    case ${choice} in
+        1)
+            read -p "Enter the full URL to clear: " url_to_clear
+            if [[ ! "${url_to_clear}" =~ ^https?:// ]]; then
+                log_message "ERROR: The URL must start with 'http://' or 'https://'." >&2; exit 1;
+            fi
+
+            # Deconstruct URL to build the Nginx cache key
+            local scheme
+            scheme=$(echo "${url_to_clear}" | grep -o 'https\?://' | sed 's/:\/\///')
+            local host
+            host=$(echo "${url_to_clear}" | sed -e 's,^https\?://,,' -e 's,/.*$,,')
+            local request_uri
+            request_uri="/$(echo "${url_to_clear}" | sed -e 's,^https\?://[^/]*,,')"
+            
+            local cache_key="${scheme}GET${host}${request_uri}"
+            local md5_hash
+            md5_hash=$(echo -n "${cache_key}" | md5sum | awk '{print $1}')
+            
+            # Nginx cache path format: last char / second-to-last two chars / full hash
+            local cache_file_path="${CACHE_PATH}/${md5_hash: -1:1}/${md5_hash: -3:2}/${md5_hash}"
+
+            log_message "--- Clearing cache for ${url_to_clear} ---"
+            if [ -f "${cache_file_path}" ]; then
+                log_message "Step 1: Removing Nginx cache file: ${cache_file_path}"
+                rm -f "${cache_file_path}"
+                log_message "Success: Nginx cache file removed."
+                log_message "Step 2: Flushing WordPress object cache..."
+                purge_wordpress_cache
+            else
+                log_message "Notice: Nginx cache file not found at expected path. No action taken."
+            fi
+            log_message "--- Operation complete ---"
+            ;;
+        2)
+            read -p "This will DELETE ALL files in '${CACHE_PATH}', flush WordPress, and RESTART Nginx. Are you sure? (yes/no): " confirm
+            if [[ "${confirm}" == "yes" ]]; then
+                log_message "--- Clearing entire Nginx cache ---"
+                if [[ -d "${CACHE_PATH}" ]]; then
+                    log_message "Step 1: Clearing all Nginx cache files..."
+                    # Safer than 'rm -rf *'
+                    find "${CACHE_PATH}" -mindepth 1 -delete
+                    log_message "Success: Nginx cache directory cleared."
+                else
+                    log_message "WARNING: Cache path '${CACHE_PATH}' does not exist. Skipping."
+                fi
+                
+                log_message "Step 2: Flushing WordPress object cache..."
+                purge_wordpress_cache
+                
+                log_message "Step 3: Restarting Nginx..."
+                restart_nginx
+                log_message "--- Operation complete ---"
+            else
+                log_message "Operation cancelled."
+            fi
+            ;;
+        *)
+            log_message "Invalid choice. Please enter 1 or 2." >&2; exit 1;
+            ;;
+    esac
+}
+
+# Execute the main function.
+main

@@ -35,6 +35,7 @@ Open the script and edit the variables in the **"User-defined Variables"** secti
 * `REMOTE_USER`: The username to connect to the remote server.  
 * `REMOTE_DIR`: The full path to the directory on the remote server where backups will be stored.  
 * `REMOTE_SSH_KEY`: The path to the SSH private key the script should use for passwordless login.  
+* `REMOTE_MAX_BACKUPS`: Number of remote backups to keep on the sync destination.  
 * `EMAIL_ENABLED`: Set to `true` or `false`.  
 * `FROM_ADDRESS` & `RECIPIENT_ADDRESS`: Your desired email notification addresses.
 
