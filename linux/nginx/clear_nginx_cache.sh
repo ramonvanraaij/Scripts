@@ -140,8 +140,8 @@ check_and_install_php_ext() {
             install_package "${package_name}"
             # Verify it's loaded after installation attempt
             if ! is_php_ext_loaded "${ext_name}"; then
-                 log_message "ERROR: PHP extension '${ext_name}' still not loaded after installation." >&2
-                 if [[ "$is_required" == "true" ]]; then exit 1; fi
+                log_message "ERROR: PHP extension '${ext_name}' still not loaded after installation." >&2
+                if [[ "$is_required" == "true" ]]; then exit 1; fi
             fi
         elif [[ "$is_required" == "true" ]]; then
             log_message "Installation declined. Script cannot continue." >&2
@@ -209,8 +209,8 @@ run_dependency_checks() {
 # --- Main Script Logic ---
 main() {
     if [[ $EUID -ne 0 ]]; then
-       log_message "FATAL: This script must be run as root. Please use 'sudo'." >&2
-       exit 1
+        log_message "FATAL: This script must be run as root. Please use 'sudo'." >&2
+        exit 1
     fi
 
     run_dependency_checks
@@ -233,8 +233,12 @@ main() {
             scheme=$(echo "${url_to_clear}" | grep -o 'https\?://' | sed 's/:\/\///')
             local host
             host=$(echo "${url_to_clear}" | sed -e 's,^https\?://,,' -e 's,/.*$,,')
+            
+            # **FIXED**: Use robust parameter expansion to get the request URI.
             local request_uri
-            request_uri="/$(echo "${url_to_clear}" | sed -e 's,^https\?://[^/]*,,')"
+            request_uri="${url_to_clear#*//${host}}"
+            # Ensure the request_uri is at least "/" for the homepage
+            request_uri=${request_uri:-/}
             
             local cache_key="${scheme}GET${host}${request_uri}"
             local md5_hash
