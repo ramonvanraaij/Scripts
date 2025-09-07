@@ -58,7 +58,9 @@ readonly PATHS_TO_BACKUP=(
     "/etc/nginx"
     "/etc/php83"
     "/etc/php84"
+    "/var/spool/cron/crontabs"
     "/etc/ssh/sshd_config"
+    "/etc/sshguard.conf"
     "/etc/nftables.nft"
     "/etc/logrotate.d"
     "/usr/local/bin"
@@ -119,11 +121,15 @@ EOM
 # Ensures temporary files are cleaned up securely on any exit.
 cleanup() {
     local exit_code=$?
-    # The ERR trap will have already set the status to FAILURE.
-    if [[ $exit_code -eq 0 && "${SCRIPT_STATUS}" == "SUCCESS" ]]; then
+    # CORRECTED: If the script's exit code is non-zero, it's a failure.
+    # This ensures that manual 'exit 1' calls correctly mark the script as failed.
+    if [[ $exit_code -ne 0 ]]; then
+        SCRIPT_STATUS="FAILURE"
+    fi
+
+    if [[ "${SCRIPT_STATUS}" == "SUCCESS" ]]; then
         log_message "--- Backup and prune completed successfully. ---"
     else
-        # This message handles cases where a non-trapped error might occur.
         log_message "--- Backup script finished with status: ${SCRIPT_STATUS} (Exit Code: ${exit_code}). ---"
     fi
     
