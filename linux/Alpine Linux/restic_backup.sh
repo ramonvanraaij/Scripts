@@ -94,14 +94,15 @@ log_message() {
     formatted_message=$(printf '[%s] %s' "$(date '+%Y-%m-%d %H:%M:%S')" "$1")
     # Print to console with a newline
     echo "${formatted_message}"
-    # Add to email body with a newline
-    LOG_BODY+="${formatted_message}\n"
+    # Add to email body with a real newline character using ANSI-C quoting
+    LOG_BODY+="${formatted_message}"$'\n'
 }
 
 # Appends raw, multi-line command output to the email body.
 log_output() {
     echo "${1}"
-    LOG_BODY+="\n--- Command Output ---\n${1}\n--- End Output ---\n"
+    # Use ANSI-C quoting for newlines to ensure correct email formatting
+    LOG_BODY+=$'\n--- Command Output ---\n'"${1}"$'\n--- End Output ---\n'
 }
 
 # Sends the final email notification using sendmail.
