@@ -59,6 +59,7 @@ readonly PATHS_TO_BACKUP=(
     "/etc/php83"
     "/etc/php84"
     "/var/spool/cron/crontabs"
+    "/etc/apk/repositories"
     "/etc/periodic"
     "/etc/ssh/sshd_config"
     "/etc/sshguard.conf"
