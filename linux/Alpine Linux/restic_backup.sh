@@ -61,6 +61,7 @@ readonly PATHS_TO_BACKUP=(
     "/var/spool/cron/crontabs"
     "/etc/apk/repositories"
     "/etc/periodic"
+    "/etc/letsencrypt"
     "/etc/ssh/sshd_config"
     "/etc/sshguard.conf"
     "/etc/nftables.nft"
