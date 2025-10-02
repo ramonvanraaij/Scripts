@@ -96,9 +96,6 @@ main() {
         curl -s https://www.cloudflare.com/ips-v4 | sed 's/^/set_real_ip_from /;s/$/;/'
         # Fetch and format IPv6 ranges
         curl -s https://www.cloudflare.com/ips-v6 | sed 's/^/set_real_ip_from /;s/$/;/'
-        echo ""
-        echo "# Use the CF-Connecting-IP header to determine the real IP."
-        echo "real_ip_header CF-Connecting-IP;"
     } > "${TMP_FILE}"
     log_message "Successfully built new IP list in temporary file."
 
