@@ -10,6 +10,8 @@
 # This script automates the process of keeping Nginx's trusted proxy
 # list for Cloudflare up-to-date.
 #
+# Featured in the following blog post: https://ramon.vanraaij.eu/the-crowd-sourced-shield-intrusion-prevention-system-web-application-firewall/
+#
 # It performs the following actions:
 # 1. Fetches the latest IPv4 and IPv6 address ranges from Cloudflare.
 # 2. Formats them into a valid Nginx configuration file.
