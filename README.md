@@ -17,19 +17,54 @@ The repository is organized to be clear and easy to navigate:
 
 ```
 /
-├── linux/
-│   ├── AlmaLinux/
-│   ├── Alpine Linux/
-│   ├── Arch Linux/
-│   ├── Debian/
-│   ├── Distrobox/
-│   ├── iSH/
-│   ├── nginx/
-│   ├── Proxmox/
-│   └── Proxmox Mail Gateway/
 ├── .gitignore
 ├── LICENSE.md
-└── README.md
+├── README.md
+└── linux
+    ├── AlmaLinux
+    │   ├── install_djbdns.sh
+    │   └── install_dnf-automatic.sh
+    ├── Alpine Linux
+    │   ├── apk-autoupdate-cron
+    │   ├── example_restic-b2.env
+    │   ├── example_restic-sftp.env
+    │   └── restic_backup.sh
+    ├── Arch Linux
+    │   ├── 00-runonce.sh
+    │   ├── add-repo_chaotic-aur.sh
+    │   ├── fix_ocamlfuse_upgrade.sh
+    │   ├── GRUB_Recovery_Arch_Windows_DualBoot.md
+    │   ├── install_qnap-qsync.sh
+    │   ├── install_Snap_Store.sh
+    │   ├── plymouth_boot_splash.md
+    │   └── system-update.sh
+    ├── backup.sources
+    ├── backup-to-git.py
+    ├── backup_wordpress.sh
+    ├── cloudflare
+    │   └── cloudflare-cache-purge.sh
+    ├── Debian
+    │   └── install_qnap-qsync.sh
+    ├── Distrobox
+    │   ├── create_debian.sh
+    │   └── create_pod.sh
+    ├── install_homebrew.sh
+    ├── iSH
+    │   ├── config.fish
+    │   ├── dns-lookup.py
+    │   └── get-my-ip.py
+    ├── nginx
+    │   ├── clear_nginx_cache.sh
+    │   ├── configure_gzip.sh
+    │   ├── update-cloudflare-ips.sh
+    │   └── wordpress_update.sh
+    ├── Proxmox
+    │   └── update-proxmox-cloudflare-ips.sh
+    ├── Proxmox Mail Gateway
+    │   ├── pmg_backup.md
+    │   └── pmg_backup.sh
+    ├── proxy-browser.sh
+    └── sshjump.sh
 ```
 
 *   `linux/`: Contains all scripts, categorized by the target Linux distribution or application.
