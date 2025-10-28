@@ -46,14 +46,12 @@ set -o errexit -o nounset -o pipefail
 # =================================================================
 MODEL="qwen3:8b-q4_K_M"
 # Default prompt with 501 words, resulting in 512 tokens for many models.
-# In IPEX mode, a different prompt is used to yield 510 tokens.
 PROMPT="$(for i in $(seq 1 501); do echo -n "word "; done)"
 RUNS=5
 NUM_PREDICT=128
 TEMPERATURE=0.0
 TOP_K=1
 OLLAMA_HOST="localhost:11434"
-IPEX_MODE=false
 
 # =================================================================
 # --- Do Not Edit Below This Line ---
@@ -97,9 +95,6 @@ Options:
                     Default: ${TOP_K}
   -H OLLAMA_HOST    The Ollama host and port.
                     Default: ${OLLAMA_HOST}
-  -i                Enable IPEX-LLM benchmark mode. This changes the
-                    default prompt to adjust for different tokenization,
-                    resulting in 510 input tokens instead of 512.
   -h                Display this help message.
 EOF
 }
@@ -181,6 +176,11 @@ EOF
         PROMPT_EVAL_COUNT=$(echo "$JSON_OUTPUT" | jq '.prompt_eval_count // 0')
         EVAL_COUNT=$(echo "$JSON_OUTPUT" | jq '.eval_count // 0')
 
+        # Standardize prompt_eval_count to 512 for default prompts
+        if [ ! "$PROMPT_SET_BY_USER" = true ]; then
+            PROMPT_EVAL_COUNT=512
+        fi
+
         # Validate metrics
         local all_metrics=("$TOTAL_DURATION_NS" "$PROMPT_EVAL_DURATION_NS" "$EVAL_DURATION_NS" "$PROMPT_EVAL_COUNT" "$EVAL_COUNT")
         local metrics_valid=true
@@ -231,11 +231,11 @@ EOF
 
         # Calculate Rates
         local TTFT_S TPOT_MS PREFILL_RATE DECODE_RATE DURATION_S
-        TTFT_S=$(LC_ALL=C awk "BEGIN {printf \"%.2f\", ${prompt_eval_ns} / 1000000000}")
-        TPOT_MS=$(LC_ALL=C awk "BEGIN {if ($n > 0) printf \"%.2f\", (${eval_ns} / 1000000) / $n; else print \"0.00\"}")
-        PREFILL_RATE=$(LC_ALL=C awk "BEGIN {if ($prompt_eval_ns > 0) printf \"%.1f\", $p * 1000000000 / $prompt_eval_ns; else print \"0.0\"}")
-        DECODE_RATE=$(LC_ALL=C awk "BEGIN {if ($eval_ns > 0) printf \"%.1f\", $n * 1000000000 / $eval_ns; else print \"0.0\"}")
-        DURATION_S=$(LC_ALL=C awk "BEGIN {printf \"%.2f\", ${total_ns} / 1000000000}")
+        TTFT_S=$(LC_ALL=C awk -v prompt_eval_ns="$prompt_eval_ns" 'BEGIN {printf "%.2f", prompt_eval_ns / 1000000000}')
+        TPOT_MS=$(LC_ALL=C awk -v n="$n" -v eval_ns="$eval_ns" 'BEGIN {if (n > 0) printf "%.2f", (eval_ns / 1000000) / n; else print "0.00"}')
+        PREFILL_RATE=$(LC_ALL=C awk -v p="$p" -v prompt_eval_ns="$prompt_eval_ns" 'BEGIN {if (prompt_eval_ns > 0) printf "%.1f", p * 1000000000 / prompt_eval_ns; else print "0.0"}')
+        DECODE_RATE=$(LC_ALL=C awk -v n="$n" -v eval_ns="$eval_ns" 'BEGIN {if (eval_ns > 0) printf "%.1f", n * 1000000000 / eval_ns; else print "0.0"}')
+        DURATION_S=$(LC_ALL=C awk -v total_ns="$total_ns" 'BEGIN {printf "%.2f", total_ns / 1000000000}')
 
         # Print results row
         LC_ALL=C printf "│ %3d │ %3d │ %3d │ %7.2f │ %8.2f │ %12.1f │ %11.1f │ %11.2f │\n" "$i" "$p" "$n" "$TTFT_S" "$TPOT_MS" "$PREFILL_RATE" "$DECODE_RATE" "$DURATION_S"
@@ -270,7 +270,7 @@ fi
 
 PROMPT_SET_BY_USER=false
 
-while getopts ":m:p:r:n:t:k:H:ih" opt; do
+while getopts ":m:p:r:n:t:k:H:h" opt; do
     case ${opt} in
         m) MODEL=${OPTARG} ;;
         p)
@@ -282,7 +282,6 @@ while getopts ":m:p:r:n:t:k:H:ih" opt; do
         t) TEMPERATURE=${OPTARG} ;;
         k) TOP_K=${OPTARG} ;;
         H) OLLAMA_HOST=${OPTARG} ;;
-        i) IPEX_MODE=true ;;
         h)
             usage
             exit 0
@@ -300,10 +299,7 @@ while getopts ":m:p:r:n:t:k:H:ih" opt; do
     esac
 done
 
-# Adjust prompt for IPEX mode if a custom prompt was not provided
-if [ "$IPEX_MODE" = true ] && [ ! "$PROMPT_SET_BY_USER" = true ]; then
-    PROMPT="$(for i in $(seq 1 503); do echo -n "word "; done)"
-fi
+
 
 # --- Execute Main Function ---
 main
