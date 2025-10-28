@@ -45,12 +45,15 @@ set -o errexit -o nounset -o pipefail
 # These can be overridden with command-line flags.
 # =================================================================
 MODEL="qwen3:8b-q4_K_M"
-PROMPT="Write a short story about a tulip seller in Amsterdam who finds a 17th-century painting."
+# Default prompt with 501 words, resulting in 512 tokens for many models.
+# In IPEX mode, a different prompt is used to yield 510 tokens.
+PROMPT="$(for i in $(seq 1 501); do echo -n "word "; done)"
 RUNS=5
-NUM_PREDICT=256
+NUM_PREDICT=128
 TEMPERATURE=0.0
 TOP_K=1
 OLLAMA_HOST="localhost:11434"
+IPEX_MODE=false
 
 # =================================================================
 # --- Do Not Edit Below This Line ---
@@ -94,6 +97,9 @@ Options:
                     Default: ${TOP_K}
   -H OLLAMA_HOST    The Ollama host and port.
                     Default: ${OLLAMA_HOST}
+  -i                Enable IPEX-LLM benchmark mode. This changes the
+                    default prompt to adjust for different tokenization,
+                    resulting in 510 input tokens instead of 512.
   -h                Display this help message.
 EOF
 }
@@ -262,31 +268,42 @@ if [ $# -eq 0 ]; then
     echo
 fi
 
-while getopts ":m:p:r:n:t:k:H:h" opt; do
+PROMPT_SET_BY_USER=false
+
+while getopts ":m:p:r:n:t:k:H:ih" opt; do
     case ${opt} in
-        m) MODEL=${OPTARG} ;; 
-        p) PROMPT=${OPTARG} ;; 
-        r) RUNS=${OPTARG} ;; 
-        n) NUM_PREDICT=${OPTARG} ;; 
-        t) TEMPERATURE=${OPTARG} ;; 
-        k) TOP_K=${OPTARG} ;; 
-        H) OLLAMA_HOST=${OPTARG} ;; 
-        h) 
+        m) MODEL=${OPTARG} ;;
+        p)
+            PROMPT=${OPTARG}
+            PROMPT_SET_BY_USER=true
+            ;;
+        r) RUNS=${OPTARG} ;;
+        n) NUM_PREDICT=${OPTARG} ;;
+        t) TEMPERATURE=${OPTARG} ;;
+        k) TOP_K=${OPTARG} ;;
+        H) OLLAMA_HOST=${OPTARG} ;;
+        i) IPEX_MODE=true ;;
+        h)
             usage
             exit 0
-            ;; 
-        ?) 
+            ;;
+        ?)
             log_message "${RED}" "Invalid option: -${OPTARG}" >&2
             usage
             exit 1
-            ;; 
-        :) 
+            ;;
+        :)
             log_message "${RED}" "Option -${OPTARG} requires an argument." >&2
             usage
             exit 1
-            ;; 
+            ;;
     esac
 done
+
+# Adjust prompt for IPEX mode if a custom prompt was not provided
+if [ "$IPEX_MODE" = true ] && [ ! "$PROMPT_SET_BY_USER" = true ]; then
+    PROMPT="$(for i in $(seq 1 503); do echo -n "word "; done)"
+fi
 
 # --- Execute Main Function ---
 main
