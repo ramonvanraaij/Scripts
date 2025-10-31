@@ -109,16 +109,16 @@ select_os() {
 # Returns:
 #   The chosen pod name.
 get_pod_name() {
-  local default_name="$1"
-  local pod_name
+  local default_name="${1:-}"
+  local pod_name=""
   while true; do
     read -p "Enter the name for this pod (default: '$default_name'): " pod_name
     pod_name=${pod_name:-$default_name}
-    if [[ "$pod_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+    if [[ -n "$pod_name" && "$pod_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
       echo "$pod_name"
       return
     else
-      echo "Invalid pod name. Please use only letters, numbers, hyphens, underscores, and periods."
+      echo "Invalid or empty pod name. Please use only letters, numbers, hyphens, underscores, and periods." >&2
     fi
   done
 }
@@ -164,7 +164,7 @@ create_pod() {
     "AlmaLinux")
       image_name="almalinux"
       package_manager="dnf"
-      packages="bat fish ugrep eza htop wget"
+      packages="bat fish ugrep htop wget"
       fastfetch_pkg_type="rpm"
       ;;
     "Arch Linux")
@@ -175,19 +175,19 @@ create_pod() {
     "Debian")
       image_name="debian"
       package_manager="apt"
-      packages="bat fish ugrep eza htop wget fonts-hack-ttf"
+      packages="bat fish ugrep eza htop wget fonts-hack"
       fastfetch_pkg_type="deb"
       ;;
     "Kali Linux")
       image_name="kali-rolling"
       package_manager="apt"
-      packages="bat fish ugrep eza htop wget fonts-hack-ttf kali-linux-headless kali-linux-large"
+      packages="bat fish ugrep eza htop wget fonts-hack kali-linux-headless kali-linux-large"
       fastfetch_pkg_type="deb"
       ;;
     "Ubuntu")
       image_name="ubuntu"
       package_manager="apt"
-      packages="bat fish ugrep eza htop wget fonts-hack-ttf"
+      packages="bat fish ugrep eza htop wget fonts-hack"
       fastfetch_pkg_type="deb"
       ;;
     *)
@@ -211,8 +211,27 @@ create_pod() {
     distrobox enter "$pod_name" -- sudo ln -sf /usr/bin/batcat /usr/bin/bat
   elif [[ "$package_manager" == "dnf" ]]; then
     distrobox enter "$pod_name" -- sudo dnf -y install epel-release
+    distrobox enter "$pod_name" -- sudo /usr/bin/crb enable
     distrobox enter "$pod_name" -- sudo dnf -y install $packages
     distrobox enter "$pod_name" -- sudo ln -sf /usr/bin/bat /usr/bin/batcat
+
+    log "Installing eza for $pod_name..."
+    local eza_url
+    eza_url=$(curl -s https://api.github.com/repos/eza-community/eza/releases/latest | jq -r '.assets[] | select(.name | endswith("x86_64-unknown-linux-gnu.tar.gz")) | .browser_download_url')
+    distrobox enter "$pod_name" -- sh -c " \
+        mkdir eza-install && \
+        cd eza-install && \
+        wget -O eza.tar.gz '$eza_url' && \
+        tar -xzf eza.tar.gz && \
+        sudo mv eza /usr/local/bin/ && \
+        cd .. && \
+        rm -rf eza-install \
+    "
+  fi
+
+  if [[ " ${packages} " =~ " fish " ]]; then
+    log "Setting fish as the default shell for $pod_name..."
+    distrobox enter "$pod_name" -- sh -c 'sudo usermod --shell /usr/bin/fish $USER'
   fi
 
   if [[ -n "$fastfetch_pkg_type" ]]; then
