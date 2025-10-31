@@ -6,70 +6,54 @@ This repository is a curated collection of personal scripts designed for various
 
 ## Features
 
-*   **System Automation:** Scripts to automate daily tasks like system updates for Arch Linux (including AUR), and other distributions.
-*   **Backups:** Robust backup solutions for WordPress sites (database and files), and a generic `rsync`-to-Git backup script.
-*   **Security:** Tools to enhance security, such as automatically updating Nginx's trusted proxy list for Cloudflare.
-*   **Utilities:** A variety of helper scripts for tasks like DNS lookups, file synchronization, and more.
+The scripts are designed to be modular and configurable, with clear instructions for usage and automation. They often include features like:
+
+*   **Automated Updates:** Scripts for updating system packages and applications.
+*   **Backups:** Scripts for backing up websites, databases, and configuration files.
+*   **Security:** Scripts for managing firewall rules and trusted proxies.
+*   **Utility:** Various helper scripts for tasks like DNS lookups and file synchronization.
+
+## Dependencies
+
+Many scripts in this repository rely on common command-line tools. Please ensure the following are installed on your system:
+
+*   `curl`: For making HTTP requests.
+*   `jq`: For parsing JSON data.
+*   `rsync`: For file synchronization.
+*   `git`: For version control.
+
+## Secrets Management
+
+Scripts that require sensitive information, such as API keys or passwords, will have placeholders in the script itself. For example, in `cloudflare-cache-purge.sh`, you will find:
+
+```bash
+CLOUDFLARE_API_TOKEN="YOUR_API_TOKEN"
+```
+
+It is recommended to replace these placeholders with a secure method of secrets management, such as environment variables or a dedicated secrets management tool.
 
 ## Directory Structure
 
-The repository is organized to be clear and easy to navigate:
+The repository is organized as follows:
 
-```
-/
-├── .gitignore
-├── LICENSE.md
-├── README.md
-└── linux
-    ├── AlmaLinux
-    │   ├── install_djbdns.sh
-    │   └── install_dnf-automatic.sh
-    ├── Alpine Linux
-    │   ├── apk-autoupdate-cron
-    │   ├── example_restic-b2.env
-    │   ├── example_restic-sftp.env
-    │   └── restic_backup.sh
-    ├── Arch Linux
-    │   ├── 00-runonce.sh
-    │   ├── add-repo_chaotic-aur.sh
-    │   ├── fix_ocamlfuse_upgrade.sh
-    │   ├── GRUB_Recovery_Arch_Windows_DualBoot.md
-    │   ├── install_qnap-qsync.sh
-    │   ├── install_Snap_Store.sh
-    │   ├── plymouth_boot_splash.md
-    │   └── system-update.sh
-    ├── backup.sources
-    ├── backup-to-git.py
-    ├── backup_wordpress.sh
-    ├── cloudflare
-    │   └── cloudflare-cache-purge.sh
-    ├── Debian
-    │   └── install_qnap-qsync.sh
-    ├── Distrobox
-    │   ├── create_debian.sh
-    │   └── create_pod.sh
-    ├── install_homebrew.sh
-    ├── iSH
-    │   ├── config.fish
-    │   ├── dns-lookup.py
-    │   └── get-my-ip.py
-    ├── nginx
-    │   ├── clear_nginx_cache.sh
-    │   ├── configure_gzip.sh
-    │   ├── update-cloudflare-ips.sh
-    │   └── wordpress_update.sh
-    ├── Proxmox
-    │   └── update-proxmox-cloudflare-ips.sh
-    ├── Proxmox Mail Gateway
-    │   ├── pmg_backup.md
-    │   └── pmg_backup.sh
-    ├── proxy-browser.sh
-    └── sshjump.sh
-```
+*   `linux/`: Contains scripts for various Linux distributions and applications.
+    *   `AlmaLinux/`, `Alpine Linux/`, `Arch Linux/`, `Debian/`: Distribution-specific scripts.
+    *   `Distrobox/`, `iSH/`, `nginx/`, `Proxmox/`, `Proxmox Mail Gateway/`: Application-specific scripts.
+    *   `backup_wordpress.sh`, `backup-to-git.py`: General-purpose backup scripts.
+*   `.gitignore`: Excludes common temporary files, packages, and logs.
+*   `LICENSE.md`: The MIT License for the repository.
+*   `README.md`: A brief introduction to the script collection.
 
-*   `linux/`: Contains all scripts, categorized by the target Linux distribution or application.
-*   `*.sh`: Bash scripts for various tasks.
-*   `*.py`: Python scripts for more complex logic.
+## Key Scripts
+
+Here are some of a few key scripts in this collection:
+
+*   **`linux/Arch Linux/system-update.sh`**: Automates daily system updates on Arch Linux, including `pacman` and `yay` packages, and pulls updates for local git repositories.
+*   **`linux/backup_wordpress.sh`**: A comprehensive script for backing up a WordPress site, including the database and files. It supports remote backups, rotation, and email notifications.
+*   **`linux/nginx/update-cloudflare-ips.sh`**: Automatically updates Nginx's trusted proxy list for Cloudflare IPs to ensure correct IP address resolution.
+*   **`linux/backup-to-git.py`**: A Python script that uses `rsync` to back up files and directories to a local Git repository and pushes the changes to a remote repository.
+*   **`linux/iSH/dns-lookup.py`**: A simple Python script for performing DNS 'A' record lookups using Google's DNS-over-HTTPS service.
+*   **`linux/cloudflare/cloudflare-cache-purge.sh`**: A script to purge the Cloudflare cache for a specific zone, with support for both interactive and non-interactive (flag-based) operation.
 
 ## Getting Started
 
@@ -83,6 +67,28 @@ chmod +x linux/Arch\ Linux/system-update.sh
 ```
 
 Please read the comments at the beginning of each script for detailed instructions.
+
+## Development Conventions
+
+*   **Shell Scripts:** Scripts are written in Bash and are designed to be POSIX-compliant where possible. They use `set -o errexit -o nounset -o pipefail` for robustness. All scripts must be compatible with the strict Alpine Linux BusyBox shell.
+*   **Python Scripts:** Scripts are written in Python 3 and use standard libraries where possible.
+*   **Commenting:** Scripts should be well-commented to ensure clarity and maintainability. The preferred commenting style includes:
+    *   **Header:** A comprehensive header at the beginning of each script with the following sections:
+        *   Shebang (e.g., `#!/usr/bin/env bash`)
+        *   Script name
+        *   A descriptive title
+        *   Copyright and License information
+        *   Author information
+        *   A detailed description of the script's purpose, features, and usage with examples.
+    *   **Section comments:** Use comments to divide the script into logical sections (e.g., `--- Configuration ---`, `--- Core Functions ---`).
+    *   **Function comments:** Add a comment above each function explaining its purpose and parameters.
+    *   **In-line comments:** Use in-line comments to explain complex or non-obvious lines of code.
+
+## Troubleshooting
+
+*   **Script execution errors:** Ensure that the scripts in `~/.local/bin` are executable (`chmod +x <script>`).
+*   **Missing dependencies:** If a script fails due to a missing command, please install the required dependency using your system's package manager.
+*   **Backup script failures:** If a backup script fails, check the script's log output for any error messages from the underlying tools (e.g., `rsync`, `mysqldump`).
 
 ## Disclaimer
 
