@@ -29,34 +29,57 @@
 #    /path/to/your/script/system-update.sh
 # =================================================================
 
-# --- Git Repository Updates ---
+# --- Script Configuration ---
 # Set to "true" to enable automatic `git pull` for the repos listed below.
-readonly GIT_UPDATE_ENABLED="false"
+readonly GIT_UPDATE_ENABLED="true"
+
+# Log file for recording update history.
+readonly LOG_FILE="$HOME/.cache/system-update/system-update.log"
 
 # A list of absolute paths to the local git repositories to update.
 # Add your own repositories here.
-readonly REPOS_TO_UPDATE=(
-    "$HOME/Scripts"
-    "$HOME/.local/share/chezmoi"
-)
+# A list of absolute paths to the local git repositories to update.
+# Add your own repositories here.
+# For other users, these paths might not exist. Uncomment and configure as needed.
+# readonly REPOS_TO_UPDATE=(
+#     "$HOME/Projects/Scripts"
+#     "$HOME/.local/share/chezmoi"
+# )
 
+# Color codes for echo
+BLUE="\e[34m"
+GREEN="\e[32m"
+YELLOW="\e[33m"
+RED="\e[31m"
+RESET="\e[0m"
 
-# --- Define color variables for styled terminal output ---
-# RED is used for the final reboot message to make it stand out.
-# NORMAL resets the text formatting to the terminal's default.
-RED=$(tput setaf 1)
-NORMAL=$(tput sgr0)
+# Function to print a colored message
+print_message() {
+    local color="$1"
+    local message="$2"
+    echo -e "${color}${message}${RESET}"
+}
 
-# --- Define the path for the daily update marker file ---
-# The script creates a file with the current date (YYYY-MM-DD) as its name.
-# This file is used to check if the update has already been run today.
+# Stop script on errors
+set -e
+
+# --- Daily Update Check ---
+# The script checks if an update has already been performed today.
+# To bypass this check, run the script with the --force flag.
 UPDATE_MARKER="$HOME/.cache/system-update/$(date +%F)"
 
-# --- Check if the daily update has already been performed ---
-# If a marker file with today's date exists, the script will exit.
-if [ -f "$UPDATE_MARKER" ]; then
-    printf "Daily system update already performed today. Exiting.\n"
+if [ -f "$UPDATE_MARKER" ] && [ "$1" != "--force" ]; then
+    print_message "$GREEN" "Daily system update already performed today. Exiting.\n"
     exit 0
+fi
+
+# --- Sudo Privilege Check ---
+# The script requires sudo privileges to run system updates.
+# This check ensures that the script has the necessary permissions before proceeding.
+print_message "$BLUE" "Sudo privileges are required for the daily system update."
+if ! sudo -v; then
+    print_message "$RED" "Failed to obtain sudo privileges. Exiting."
+    exit 1
 fi
 
 # --- Create the marker directory and file ---
@@ -64,7 +87,7 @@ fi
 mkdir -p "$HOME/.cache/system-update"
 touch "$UPDATE_MARKER"
 
-printf "Performing daily system update...\n"
+printf "Performing daily system update...\n" | tee -a "$LOG_FILE"
 
 # A function to navigate into a git repository, pull the latest
 # changes, and report its status.
@@ -74,14 +97,14 @@ pull_repo() {
     REPO_PATH="$1"
     REPO_NAME=$(basename "$REPO_PATH")
 
-    printf "\nChecking %s repo...\n" "$REPO_NAME"
+    printf "\nChecking %s repo...\n" "$REPO_NAME" | tee -a "$LOG_FILE"
     if [ -d "$REPO_PATH" ]; then
         # Use a subshell `()` to change directory, so we don't have to `cd` back.
         # `git pull --ff-only` ensures the pull only proceeds if it's a fast-forward,
         # preventing merges that would require manual intervention.
-        (cd "$REPO_PATH" && git pull --ff-only)
+        (cd "$REPO_PATH" && git pull --ff-only) | tee -a "$LOG_FILE"
     else
-        printf "Warning: %s not found at %s, skipping.\n" "$REPO_NAME" "$REPO_PATH"
+        printf "Warning: %s not found at %s, skipping.\n" "$REPO_NAME" "$REPO_PATH" | tee -a "$LOG_FILE"
     fi
 }
 
@@ -92,29 +115,54 @@ if [ "${GIT_UPDATE_ENABLED}" = "true" ]; then
         pull_repo "$repo"
     done
 else
-    printf "\nGit repository updates are disabled. Skipping.\n"
+    printf "\n\nGit repository updates are disabled. Skipping.\n" | tee -a "$LOG_FILE"
 fi
 
 # --- Update system packages with pacman ---
-# -Syu: Syncs repositories and upgrades all out-of-date packages.
-# --noconfirm: Skips all "Are you sure?" confirmation prompts.
-# --needed: Prevents re-installing packages that are already up to date.
-# --quiet: Reduces the amount of output.
-printf "\nChecking for pacman updates...\n"
-sudo pacman -Syu --noconfirm --needed --quiet
+printf "\nChecking for pacman updates...\n" | tee -a "$LOG_FILE"
+sudo pacman -Syu --noconfirm --needed --quiet | tee -a "$LOG_FILE"
 
 # --- Check for and update AUR packages with yay ---
-# First, check if the `yay` command is installed and available.
 if command -v yay >/dev/null; then
-    printf "\nChecking for yay updates...\n"
-    # The `-Syu` command for yay works similarly to pacman but also
-    # includes packages from the AUR.
-    yay -Syu --noconfirm --quiet
+    printf "\nChecking for yay updates...\n" | tee -a "$LOG_FILE"
+    yay -Syu --noconfirm --quiet | tee -a "$LOG_FILE"
 else
-    printf "\nyay not found, skipping AUR updates.\n"
+    printf "\n\nyay not found, skipping AUR updates.\n" | tee -a "$LOG_FILE"
+fi
+
+# --- Check for and update Flatpak packages ---
+if command -v flatpak >/dev/null; then
+    printf "\nChecking for Flatpak updates...\n" | tee -a "$LOG_FILE"
+    flatpak update --assumeyes | tee -a "$LOG_FILE"
+else
+    printf "\n\nFlatpak not found, skipping updates.\n" | tee -a "$LOG_FILE"
+fi
+
+# --- Check for and update Snap packages ---
+if command -v snap >/dev/null; then
+    printf "\nChecking for Snap updates...\n" | tee -a "$LOG_FILE"
+    sudo snap refresh | tee -a "$LOG_FILE"
+else
+    printf "\n\nSnap not found, skipping updates.\n" | tee -a "$LOG_FILE"
+fi
+
+# --- Check for and update Homebrew packages ---
+if command -v brew >/dev/null; then
+    printf "\nChecking for Homebrew updates...\n" | tee -a "$LOG_FILE"
+    brew update | tee -a "$LOG_FILE"
+    brew upgrade | tee -a "$LOG_FILE"
+else
+    printf "\n\nHomebrew not found, skipping updates.\n" | tee -a "$LOG_FILE"
+fi
+
+# --- Check for and update npm packages ---
+if command -v npm >/dev/null; then
+    printf "\nChecking for npm updates...\n" | tee -a "$LOG_FILE"
+    npm update -g | tee -a "$LOG_FILE"
+else
+    printf "\n\nnpm not found, skipping updates.\n" | tee -a "$LOG_FILE"
 fi
 
 # --- Inform the user about a necessary reboot ---
-# A reboot is recommended after a system update, especially if the
-# kernel or other core system components were updated.
-printf "\n\n%40s\n\n" "${RED}System update complete. You should reboot the system.${NORMAL}"
+printf "\n"
+print_message "$RED" "System update complete. You should reboot the system.\n"
