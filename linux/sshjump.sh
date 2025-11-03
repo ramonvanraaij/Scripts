@@ -18,27 +18,71 @@
 # Make sure to set execute permissions: chmod +x sshjump.sh
 # =================================================================
 
-# --- Configuration ---
-# Your jump host details
-JUMP_HOST_USERNAME="user" # Change this to your jump host username
-JUMP_HOST_ADDRESS="your_jump_host_ip_or_hostname" # Change this to your jump host IP or hostname
-JUMP_HOST_PORT="22" # Change this to your jump host's SSH port
+set -o errexit -o nounset -o pipefail
 
-# Construct the -J argument for SSH
-JUMP_ARG="-J ${JUMP_HOST_USERNAME}@${JUMP_HOST_ADDRESS}:${JUMP_HOST_PORT}"
+# --- Configuration ---
+# Your jump host details. These values can be overridden by command-line flags.
+JUMP_HOST="user@your_jump_host_ip_or_hostname" # Change this to your jump host IP or hostname
+JUMP_PORT="22" # Change this to your jump host's SSH port
+FINAL_USER=""
 # --- End Configuration ---
 
+# --- Functions ---
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [options] [user@]final_server_hostname_or_ip [-p final_server_port] [other_ssh_options]
 
-# Check if any arguments were provided
-if [ -z "$1" ]; then
-  echo "Usage: $0 [user@]final_server_hostname_or_ip [-p final_server_port] [other_ssh_options]"
-  echo "Example: $0 user@myfinalhost.com -p 2222"
-  exit 1
+This script simplifies connecting to a final SSH server via a predefined jump host.
+
+Options:
+  -s HOST      The address of the jump host (e.g., user@host).
+               (Default: $JUMP_HOST)
+  -P PORT      The port of the jump host.
+               (Default: $JUMP_PORT)
+  -p PORT      The port of the final destination.
+  -u USER      The username for the final destination.
+  -h           Show this help message and exit.
+
+Example:
+  $(basename "$0") -s user@jumphost -u finaluser myfinalhost.com -p 2222
+EOF
+  exit 0
+}
+# --- End Functions ---
+
+# --- Argument Parsing ---
+while getopts "s:P:u:h" opt; do
+  case $opt in
+    s) JUMP_HOST="$OPTARG" ;;
+    P) JUMP_PORT="$OPTARG" ;;
+    u) FINAL_USER="$OPTARG" ;;
+    h) usage ;;
+    \?) usage ;;
+  esac
+done
+shift $((OPTIND-1))
+# --- End Argument Parsing ---
+
+# Check if a final destination was provided
+if [ -z "${1-}" ]; then
+  echo "Error: No final destination specified."
+  usage
+fi
+
+# Construct the -J argument for SSH
+JUMP_ARG="-J${JUMP_HOST}:${JUMP_PORT}"
+
+# Construct the final destination string
+FINAL_DESTINATION="$1"
+if [ -n "$FINAL_USER" ]; then
+  FINAL_DESTINATION="${FINAL_USER}@${FINAL_DESTINATION}"
 fi
 
 # Execute the SSH command
-# We use 'eval' here because the JUMP_ARG contains a colon which might
-# be misinterpreted without proper quoting when combined with other arguments,
-# and passing it as a single string to ssh ensures it's treated as one argument.
-# "$@" expands all arguments passed to the script, preserving spaces and quotes.
-eval "ssh $JUMP_ARG \"$@\""
+ssh_args=()
+ssh_args+=("$JUMP_ARG")
+ssh_args+=("$FINAL_DESTINATION")
+shift
+ssh_args+=("$@")
+
+ssh "${ssh_args[@]}"
