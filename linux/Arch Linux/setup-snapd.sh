@@ -37,8 +37,8 @@ set -o pipefail
 if ! command -v yay &> /dev/null; then
   echo "yay is not installed. Proceeding with installation."
 
-  # Check if yay is available in the official repositories
-  if pacman -Ss yay &> /dev/null; then
+  # Check if yay is available in a configured repository
+  if pacman -Sp yay &> /dev/null; then
     echo "yay is available in the repositories. Installing with pacman..."
     sudo pacman -S --noconfirm yay
   else
@@ -65,6 +65,9 @@ fi
 # Check if the /snap symlink exists to prevent re-installation.
 if [ ! -L /snap ]; then
   echo "/snap symlink does not exist. Installing snapd..."
+
+  # Install build dependencies to ensure 'patch' and other tools are available
+  sudo pacman -S --needed --noconfirm base-devel
 
   # Install snapd, apparmor, and squashfs-tools using yay
   yay -S --noconfirm snapd apparmor squashfs-tools
