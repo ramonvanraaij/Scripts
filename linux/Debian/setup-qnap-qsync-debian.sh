@@ -33,7 +33,7 @@ set -o errexit -o nounset -o pipefail
 readonly SCRIPT_DEPENDENCIES="curl wget xmllint"
 
 # Dependencies required by Qsync
-readonly QSYNC_DEPENDENCIES="libasound2 libxtst6 libnss3 libusb-1.0-0 qtwayland5"
+readonly QSYNC_DEPENDENCIES="libasound2 libxtst6 libnss3 libusb-1.0-0 qtwayland5 desktop-file-utils"
 # --- End Configuration ---
 
 # --- Functions ---
@@ -57,7 +57,15 @@ check_root() {
 check_dependencies() {
     for cmd in $1; do
         if ! command -v "$cmd" &> /dev/null; then
-            error "This script requires '$cmd' to be installed. Please install it and try again."
+            log "Command '$cmd' not found. Attempting to install it..."
+            if [[ "$cmd" == "xmllint" ]]; then
+                apt-get install -y libxml2-utils
+            else
+                apt-get install -y "$cmd"
+            fi
+            if ! command -v "$cmd" &> /dev/null; then
+                error "Failed to install '$cmd'. Please install it manually and try again."
+            fi
         fi
     done
 }
@@ -75,7 +83,7 @@ main() {
     apt-get install -y ${QSYNC_DEPENDENCIES}
 
     log "Getting the latest Qsync download URL for Ubuntu (x64)..."
-    DOWNLOAD_URL=$(curl -sL "https://update.qnap.com/SoftwareRelease.xml" | xmllint --xpath 'string(/docRoot/utility/application[applicationName="com.qnap.qsync"]/platform[platformName="Ubuntu"]/software/downloadURL)')
+    DOWNLOAD_URL=$(curl -sL "https://update.qnap.com/SoftwareRelease.xml" | xmllint --xpath 'string(/docRoot/utility/application[applicationName="com.qnap.qsync"]/platform[platformName="Ubuntu"]/software/downloadURL)' -)
 
     if [[ -z "${DOWNLOAD_URL}" ]]; then
         error "Could not determine the download URL for Qsync."
@@ -88,11 +96,27 @@ main() {
     log "Downloading Qsync to a temporary file: ${TMP_DEB_FILE}..."
     wget -O "${TMP_DEB_FILE}" "${DOWNLOAD_URL}"
 
+    log "Creating Desktop directory for Qsync installer..."
+    mkdir -p /root/Desktop
+
     log "Installing Qsync..."
     dpkg -i "${TMP_DEB_FILE}"
 
     log "Fixing potential dependency issues..."
     apt-get --fix-broken install -y
+
+    if [[ -n "${SUDO_USER-}}" && "${SUDO_USER-}" != "root" ]]; then
+        log "Moving desktop shortcut to ${SUDO_USER}'s desktop..."
+        USER_HOME=$(getent passwd "${SUDO_USER}" | cut -d: -f6)
+        if [[ -d "${USER_HOME}" ]]; then
+            DESKTOP_DIR="${USER_HOME}/Desktop"
+            mkdir -p "${DESKTOP_DIR}"
+            if [[ -f "/root/Desktop/QNAPQsyncClient.desktop" ]]; then
+                mv "/root/Desktop/QNAPQsyncClient.desktop" "${DESKTOP_DIR}/"
+                chown "${SUDO_USER}:${SUDO_USER}" "${DESKTOP_DIR}/QNAPQsyncClient.desktop"
+            fi
+        fi
+    fi
 
     log "QNAP Qsync installation complete."
 }
