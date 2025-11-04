@@ -6,27 +6,29 @@
 # License: MIT
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 # =================================================================
-# This script creates and configures a new Distrobox pod with a choice of operating systems
-# (AlmaLinux, Arch Linux, Debian, Kali Linux, or Ubuntu). It automates the installation
-# of a set of useful packages and tools, including fastfetch, to provide a consistent
-# and ready-to-use environment.
-#
-# Features:
-# - Interactive OS selection menu.
-# - Customizable pod name with a default option.
-# - Automated package installation based on the selected OS.
-# - Installation of the latest fastfetch release.
-# - Support for command-line arguments to bypass the interactive menu.
-#
-# Usage:
-# - Interactive mode: ./create_pod.sh
-# - Non-interactive mode: ./create_pod.sh [os] [pod_name]
-#
-# Examples:
-# - ./create_pod.sh
-# - ./create_pod.sh archlinux my-arch-pod
-# - ./create_pod.sh ubuntu
-#
+ # This script creates and configures a new Distrobox pod with a choice of operating systems
+ # (AlmaLinux, Arch Linux, Debian, Kali Linux, or Ubuntu). It automates the installation
+ # of a set of useful packages and tools, including fastfetch, to provide a consistent
+ # and ready-to-use environment. It also allows the user to specify whether to use
+ # an init system inside the container, which can prevent host processes from being
+ # visible within the container.
+ #
+ # Features:
+ # - Interactive OS selection menu.
+ # - Customizable pod name with a default option.
+ # - Option to use an init system inside the container (`--init` flag for distrobox).
+ # - Automated package installation based on the selected OS.
+ # - Installation of the latest fastfetch release.
+ # - Support for command-line arguments to bypass the interactive menu.
+ #
+ # Usage:
+ # - Interactive mode: ./create_pod.sh
+ # - Non-interactive mode: ./create_pod.sh [os] [pod_name]
+ #
+ # Examples:
+ # - ./create_pod.sh
+ # - ./create_pod.sh archlinux my-arch-pod
+ # - ./create_pod.sh ubuntu#
 # Dependencies:
 # - distrobox
 # - wget
@@ -39,6 +41,7 @@ set -o errexit -o nounset -o pipefail
 # --- Configuration ---
 readonly SUPPORTED_OS=(
   "AlmaLinux"
+  "Alpine Linux"
   "Arch Linux"
   "Debian"
   "Kali Linux"
@@ -101,26 +104,64 @@ select_os() {
   done
 }
 
-# Get the pod name from the user.
+# Get the pod name and init system preference from the user.
 #
 # Args:
 #   $1: The default pod name.
 #
 # Returns:
-#   The chosen pod name.
-get_pod_name() {
+#   A string containing the chosen pod name and a boolean (true/false) for init system preference, separated by a space.
+get_pod_details() {
   local default_name="${1:-}"
-  local pod_name=""
+
   while true; do
-    read -p "Enter the name for this pod (default: '$default_name'): " pod_name
-    pod_name=${pod_name:-$default_name}
-    if [[ -n "$pod_name" && "$pod_name" =~ ^[a-zA-Z0-9._-]+$ ]]; then
-      echo "$pod_name"
-      return
+    read -r -p "Enter the name for this pod (default: '$default_name'): " POD_NAME
+    POD_NAME=${POD_NAME:-$default_name}
+    if [[ -n "$POD_NAME" && "$POD_NAME" =~ ^[a-zA-Z0-9._-]+$ ]]; then
+      break
     else
       echo "Invalid or empty pod name. Please use only letters, numbers, hyphens, underscores, and periods." >&2
     fi
   done
+
+  read -p "Use init system inside the container? (y/N): " -n 1 -r
+  echo
+  if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+    USE_INIT="true"
+  else
+    USE_INIT="false"
+  fi
+}
+
+# Install bashtop from source.
+#
+# Args:
+#   $1: The pod name.
+install_bashtop_from_source() {
+  local pod_name="$1"
+  log "Installing bashtop from source for $pod_name..."
+  distrobox enter "$pod_name" -- sh -c " \
+      git clone https://github.com/aristocratos/bashtop.git && \
+      cd bashtop && \
+      sudo make install && \
+      cd .. && \
+      rm -rf bashtop \
+  "
+}
+
+# Install bashtop for Ubuntu.
+#
+# Args:
+#   $1: The pod name.
+install_bashtop_ubuntu() {
+  local pod_name="$1"
+  log "Installing bashtop for Ubuntu..."
+  distrobox enter "$pod_name" -- sh -c " \
+      sudo apt-get install -y software-properties-common && \
+      sudo add-apt-repository -y ppa:bashtop-monitor/bashtop && \
+      sudo apt-get update && \
+      sudo apt-get install -y bashtop \
+  "
 }
 
 # Install fastfetch in the pod.
@@ -152,9 +193,11 @@ install_fastfetch() {
 # Args:
 #   $1: The operating system.
 #   $2: The pod name.
+#   $3: Boolean indicating whether to use init system (true/false).
 create_pod() {
   local os_choice="$1"
   local pod_name="$2"
+  local use_init="$3"
   local image_name
   local package_manager
   local packages
@@ -164,30 +207,35 @@ create_pod() {
     "AlmaLinux")
       image_name="almalinux"
       package_manager="dnf"
-      packages="bat fish ugrep htop wget"
+      packages="bat fish ugrep htop wget fastfetch git make util-linux-user"
       fastfetch_pkg_type="rpm"
+      ;;
+    "Alpine Linux")
+      image_name="alpine"
+      package_manager="apk"
+      packages="bat fish ugrep eza htop wget fastfetch git make"
       ;;
     "Arch Linux")
       image_name="archlinux"
       package_manager="pacman"
-      packages="bat fish ugrep eza htop wget ttf-hack-nerd fastfetch"
+      packages="bat fish ugrep eza htop bashtop wget ttf-hack-nerd fastfetch git make"
       ;;
     "Debian")
       image_name="debian"
       package_manager="apt"
-      packages="bat fish ugrep eza htop wget fonts-hack"
+      packages="bat fish ugrep eza htop wget fonts-hack git make bashtop"
       fastfetch_pkg_type="deb"
       ;;
     "Kali Linux")
       image_name="kali-rolling"
       package_manager="apt"
-      packages="bat fish ugrep eza htop wget fonts-hack kali-linux-headless kali-linux-large"
+      packages="bat fish ugrep eza htop wget fonts-hack kali-linux-headless kali-linux-large git make bashtop"
       fastfetch_pkg_type="deb"
       ;;
     "Ubuntu")
       image_name="ubuntu"
       package_manager="apt"
-      packages="bat fish ugrep eza htop wget fonts-hack"
+      packages="bat fish ugrep eza htop wget fonts-hack git make"
       fastfetch_pkg_type="deb"
       ;;
     *)
@@ -196,7 +244,11 @@ create_pod() {
   esac
 
   log "Creating pod '$pod_name' with $os_choice..."
-  distrobox create -i "${image_name}:latest" -n "$pod_name"
+  local init_flag=""
+  if [[ "$use_init" == "true" ]]; then
+    init_flag="--init"
+  fi
+  distrobox create -i "${image_name}:latest" -n "$pod_name" $init_flag
 
   log "Upgrading pod '$pod_name'..."
   distrobox upgrade "$pod_name"
@@ -212,6 +264,7 @@ create_pod() {
   elif [[ "$package_manager" == "dnf" ]]; then
     distrobox enter "$pod_name" -- sudo dnf -y install epel-release
     distrobox enter "$pod_name" -- sudo /usr/bin/crb enable
+    distrobox enter "$pod_name" -- sudo dnf -y update
     distrobox enter "$pod_name" -- sudo dnf -y install $packages
     distrobox enter "$pod_name" -- sudo ln -sf /usr/bin/bat /usr/bin/batcat
 
@@ -219,19 +272,33 @@ create_pod() {
     local eza_url
     eza_url=$(curl -s https://api.github.com/repos/eza-community/eza/releases/latest | jq -r '.assets[] | select(.name | endswith("x86_64-unknown-linux-gnu.tar.gz")) | .browser_download_url')
     distrobox enter "$pod_name" -- sh -c " \
+        rm -rf eza-install && \
         mkdir eza-install && \
         cd eza-install && \
         wget -O eza.tar.gz '$eza_url' && \
         tar -xzf eza.tar.gz && \
         sudo mv eza /usr/local/bin/ && \
         cd .. && \
-        rm -rf eza-install \
+        rm -rf eza-install && \
+        sudo ln -sf /usr/local/bin/eza /usr/local/bin/exa \
     "
+  elif [[ "$package_manager" == "apk" ]]; then
+    distrobox enter "$pod_name" -- sudo apk update
+    distrobox enter "$pod_name" -- sudo apk add $packages
+    distrobox enter "$pod_name" -- sudo ln -sf /usr/bin/batcat /usr/bin/bat
+  fi
+
+  if [[ ! " ${packages} " =~ " bashtop " ]]; then
+    if [[ "$os_choice" == "Ubuntu" ]]; then
+      install_bashtop_ubuntu "$pod_name"
+    else
+      install_bashtop_from_source "$pod_name"
+    fi
   fi
 
   if [[ " ${packages} " =~ " fish " ]]; then
     log "Setting fish as the default shell for $pod_name..."
-    distrobox enter "$pod_name" -- sh -c 'sudo usermod --shell /usr/bin/fish $USER'
+    distrobox enter "$pod_name" -- sh -c 'sudo chsh -s /usr/bin/fish $USER'
   fi
 
   if [[ -n "$fastfetch_pkg_type" ]]; then
@@ -251,7 +318,7 @@ main() {
 
   if [[ $# -ge 1 ]]; then
     os_input=$(echo "$1" | awk '{for(i=1;i<=NF;i++) $i=toupper(substr($i,1,1)) substr($i,2)} 1')
-    if [[ " ${SUPPORTED_OS[*]} " =~ " ${os_input} " ]]; then
+    if [[ " ${SUPPORTED_OS[*]} " =~ ${os_input} ]]; then
       os="$os_input"
     else
       # Check for case-insensitive partial match
@@ -277,12 +344,13 @@ main() {
   default_pod_name=$(echo "$os" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
 
   if [[ $# -ge 2 ]]; then
-    pod_name="$2"
+    POD_NAME="$2"
+    USE_INIT="false"
   else
-    pod_name=$(get_pod_name "$default_pod_name")
+    get_pod_details "$default_pod_name"
   fi
 
-  create_pod "$os" "$pod_name"
+  create_pod "$os" "$POD_NAME" "$USE_INIT"
 }
 
 # --- Script Execution ---
