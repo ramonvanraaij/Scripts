@@ -149,21 +149,6 @@ install_bashtop_from_source() {
   "
 }
 
-# Install bashtop for Ubuntu.
-#
-# Args:
-#   $1: The pod name.
-install_bashtop_ubuntu() {
-  local pod_name="$1"
-  log "Installing bashtop for Ubuntu..."
-  distrobox enter "$pod_name" -- sh -c " \
-      sudo apt-get install -y software-properties-common && \
-      sudo add-apt-repository -y ppa:bashtop-monitor/bashtop && \
-      sudo apt-get update && \
-      sudo apt-get install -y bashtop \
-  "
-}
-
 # Install fastfetch in the pod.
 #
 # Args:
@@ -235,7 +220,7 @@ create_pod() {
     "Ubuntu")
       image_name="ubuntu"
       package_manager="apt"
-      packages="bat fish ugrep eza htop wget fonts-hack git make"
+      packages="bat fish ugrep eza htop wget fonts-hack git make bashtop"
       fastfetch_pkg_type="deb"
       ;;
     *)
