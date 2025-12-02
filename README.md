@@ -54,6 +54,8 @@ Here are some of a few key scripts in this collection:
 *   **`linux/backup-to-git.py`**: A Python script that uses `rsync` to back up files and directories to a local Git repository and pushes the changes to a remote repository.
 *   **`linux/iSH/dns-lookup.py`**: A simple Python script for performing DNS 'A' record lookups using Google's DNS-over-HTTPS service.
 *   **`linux/cloudflare/cloudflare-cache-purge.sh`**: A script to purge the Cloudflare cache for a specific zone, with support for both interactive and non-interactive (flag-based) operation.
+*   **`linux/batocera/dedupe_roms.py`**: A Python script for intelligent ROM deduplication on Batocera/RetroDeck, using generation, year, region, and file size to determine the best version, with special handling for MAME/FBNeo and handhelds.
+*   **`linux/batocera/symlink_roms.sh`**: A Bash script for smart symlinking of ROM folders on Batocera/RetroDeck, consolidating alternative system names and preserving metadata.
 *   **`linux/Arch Linux/setup-snapd.sh`**: Automates the installation and configuration of Snapd and the Snap Store on Arch Linux.
 
 ## Getting Started
