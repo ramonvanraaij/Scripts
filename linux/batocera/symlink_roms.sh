@@ -59,8 +59,9 @@ has_real_data() {
 
     # Use find to search for any content that is NOT a dot (.), systeminfo.txt, or _info.txt
     # -maxdepth 1 ensures only direct contents of the folder are checked.
+    # -mindepth 1 ensures the folder itself is not included in the results.
     # We specifically look for *any* file or subdirectory that is not on the ignore list.
-    HAS_CONTENT=$(find "$FOLDER" -maxdepth 1 -not -name "." -not -name "systeminfo.txt" -not -name "_info.txt" | head -n 1)
+    HAS_CONTENT=$(find "$FOLDER" -mindepth 1 -maxdepth 1 -not -name "." -not -name "systeminfo.txt" -not -name "_info.txt" -not -name "gamelist.xml" | head -n 1)
 
     if [ -n "$HAS_CONTENT" ]; then
         return 0 # Found content other than ignored metadata, so it has real data.
