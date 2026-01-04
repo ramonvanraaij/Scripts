@@ -143,11 +143,13 @@ configure_reflector() {
     echo "--- Optimizing Core Arch Linux Mirror List with Reflector ---"
     
     # The main mirrorlist was backed up during bootstrap, so we just optimize it here.
-    reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist
+    if ! reflector --latest 20 --protocol https --sort rate --save /etc/pacman.d/mirrorlist; then
+        echo "ERROR: reflector failed to generate a mirrorlist. Using the fallback."
+        cp /etc/pacman.d/mirrorlist.orig.bak /etc/pacman.d/mirrorlist
+    fi
     
-    # Create a pacoloco-friendly version of the mirrorlist by stripping the prefix
-    grep "^\s*Server = " /etc/pacman.d/mirrorlist | sed 's/Server = //g' > /etc/pacman.d/mirrorlist.pacoloco
-
+    # Remove trailing slashes from the mirrorlist URLs
+    sed -i 's#/$##' /etc/pacman.d/mirrorlist
     
     echo "Core Arch Linux mirror list updated successfully."
 }
@@ -176,12 +178,12 @@ prefetch:
 repos:
   # A single logical repo for all official Arch repositories
   archlinux:
-    mirrorlist: /etc/pacman.d/mirrorlist.pacoloco
+    mirrorlist: /etc/pacman.d/mirrorlist
 
   # Repo for Chaotic-AUR - using a direct URL template is more reliable
   chaotic-aur:
     urls:
-      - https://cdn-mirror.chaotic.cx/chaotic-aur/x86_64
+      - https://aur.chaotic.cx/chaotic-aur
 
   # LizardByte Repos (fixed URL)
   lizardbyte:
@@ -193,7 +195,7 @@ repos:
   # Garuda repo - also uses a direct URL template
   garuda:
     urls:
-      - https://cdn-mirror.chaotic.cx/garuda/x86_64
+      - https://aur.chaotic.cx/garuda
 
 EOF
     echo "Pacoloco configuration written to /etc/pacoloco.yaml."
@@ -261,9 +263,24 @@ http {
         proxy_cache aur_cache;
         proxy_cache_valid 200 302 7d;
         proxy_cache_valid 404 1m;
+
+        # --- Location for database files (NO CACHING) ---
+        location ~ \.db(\.sig)?$ {
+            # Never cache database files as they change frequently
+            proxy_no_cache 1;
+            proxy_cache_bypass 1;
+
+            proxy_pass http://127.0.0.1:9129;
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+        }
         
         # --- Location Block for Proxying to Pacoloco ---
         location / {
+            proxy_buffering off;
+            proxy_hide_header Content-Length;
             proxy_pass http://127.0.0.1:9129;
             proxy_set_header Host \$host;
             proxy_set_header X-Real-IP \$remote_addr;
@@ -431,12 +448,12 @@ show_client_instructions() {
     
     echo "# --- Chaotic AUR (via pacoloco proxy) ---"
     echo "[chaotic-aur]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/chaotic-aur"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/chaotic-aur/\\\$arch"
     echo
     
     echo "# --- Garuda (via pacoloco proxy) ---"
     echo "[garuda]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/garuda"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/garuda/\\\$arch"
     echo
     
     echo "# --- LizardByte Repos (via pacoloco proxy) ---"
