@@ -30,6 +30,9 @@
 # 2. Run the script with root privileges on your server:
 #    sudo ./setup_pacman_proxy.sh
 #
+#    Alternatively, pre-configure using environment variables:
+#    sudo NGINX_PORT=80 PROXY_USER=admin PROXY_PASS=secret123 ./setup_pacman_proxy.sh
+#
 # **Note:**
 # This script is intended for a fresh Arch Linux server. It will
 # overwrite existing configurations for nginx (/etc/nginx/nginx.conf)
@@ -39,9 +42,9 @@
 set -euo pipefail
 
 # --- Global Variables ---
-NGINX_PORT=""
-PROXY_USER=""
-PROXY_PASS=""
+NGINX_PORT="${NGINX_PORT:-}"
+PROXY_USER="${PROXY_USER:-}"
+PROXY_PASS="${PROXY_PASS:-}"
 HTPASSWD_FILE="/etc/nginx/.htpasswd"
 
 # --- Functions ---
@@ -60,28 +63,47 @@ get_user_input() {
     echo "--- Server Configuration ---"
     
     # Get port for nginx
-    while true; do
-        read -rp "Enter the public port for the nginx proxy (e.g., 8129): " NGINX_PORT
-        if [[ "${NGINX_PORT}" =~ ^[0-9]+$ ]] && [ "${NGINX_PORT}" -gt 1024 ] && [ "${NGINX_PORT}" -lt 65536 ]; then
-            break
-        else
-            echo "Invalid port. Please enter a number between 1025 and 65535."
-        fi
-    done
-
-    # Get username for proxy authentication
-    read -rp "Enter the username for proxy access: " PROXY_USER
-    if [[ -z "${PROXY_USER}" ]]; then
-        echo "Username cannot be empty."
-        exit 1
+    DEFAULT_PORT=${NGINX_PORT:-80}
+    if [[ -n "${NGINX_PORT}" ]]; then
+        echo "Using provided Nginx Port: ${NGINX_PORT}"
+    else
+        read -rp "Enter Nginx Port [${DEFAULT_PORT}]: " input_port
+        NGINX_PORT=${input_port:-$DEFAULT_PORT}
+    fi
+    
+    # Validate Port
+    if ! [[ "${NGINX_PORT}" =~ ^[0-9]+$ ]] || [ "${NGINX_PORT}" -le 0 ] || [ "${NGINX_PORT}" -ge 65536 ]; then
+        echo "Invalid port. Using default 80."
+        NGINX_PORT=80
     fi
 
-    # Get password for proxy authentication
-    read -rp "Enter the password for '${PROXY_USER}': " PROXY_PASS
-    echo
+    # Generate random credentials if needed
+    if [[ -z "${PROXY_USER}" ]]; then
+        RAND_USER=$(tr -dc 'A-Z0-9' < /dev/urandom | head -c 12)
+    else
+        RAND_USER="${PROXY_USER}"
+    fi
+    
     if [[ -z "${PROXY_PASS}" ]]; then
-        echo "Password cannot be empty."
-        exit 1
+        RAND_PASS=$(tr -dc 'A-Z0-9' < /dev/urandom | head -c 12)
+    else
+        RAND_PASS="${PROXY_PASS}"
+    fi
+
+    # Get username
+    if [[ -n "${PROXY_USER}" ]]; then
+        echo "Using provided Proxy Username: ${PROXY_USER}"
+    else
+        read -rp "Enter Proxy Username [${RAND_USER}]: " input_user
+        PROXY_USER=${input_user:-$RAND_USER}
+    fi
+
+    # Get password
+    if [[ -n "${PROXY_PASS}" ]]; then
+        echo "Using provided Proxy Password: [HIDDEN]"
+    else
+        read -rp "Enter Proxy Password [${RAND_PASS}]: " input_pass
+        PROXY_PASS=${input_pass:-$RAND_PASS}
     fi
 }
 
@@ -178,12 +200,15 @@ prefetch:
 repos:
   # A single logical repo for all official Arch repositories
   archlinux:
-    mirrorlist: /etc/pacman.d/mirrorlist
+    urls:
+      - https://geo.mirror.pkgbuild.com
+      - https://mirror.rackspace.com/archlinux
+      - https://mirror.leaseweb.net/archlinux
 
   # Repo for Chaotic-AUR - using a direct URL template is more reliable
   chaotic-aur:
     urls:
-      - https://aur.chaotic.cx/chaotic-aur
+      - https://builds.garudalinux.org/repos/chaotic-aur
 
   # LizardByte Repos (fixed URL)
   lizardbyte:
@@ -195,7 +220,7 @@ repos:
   # Garuda repo - also uses a direct URL template
   garuda:
     urls:
-      - https://aur.chaotic.cx/garuda
+      - https://builds.garudalinux.org/repos/garuda
 
 EOF
     echo "Pacoloco configuration written to /etc/pacoloco.yaml."
@@ -241,7 +266,7 @@ http {
     tcp_nopush          on;
     tcp_nodelay         on;
     keepalive_timeout   65;
-    types_hash_max_size 2048;
+    types_hash_max_size 4096;
 
     include             /etc/nginx/mime.types;
     default_type        application/octet-stream;
@@ -299,11 +324,20 @@ EOF
 # Function to enable and start services
 enable_services() {
     echo "--- Enabling and Starting Services ---"
+    
+    # Clean up potentially corrupted cache from previous runs or bad mirrors
+    echo "Cleaning Pacoloco cache..."
+    rm -rf /var/cache/pacoloco/pkgs/archlinux/*.sig || true
+    rm -rf /var/cache/pacoloco/pkgs/garuda/*.sig || true
+    rm -rf /var/cache/pacoloco/pkgs/chaotic-aur/*.sig || true
+    # Optionally wipe everything if needed, but let's be specific first to avoid redownloading GBs
+    # rm -rf /var/cache/pacoloco/pkgs/*
+
     systemctl enable pacoloco.service
-    systemctl start pacoloco.service
+    systemctl restart pacoloco.service
     
     systemctl enable nginx.service
-    systemctl start nginx.service
+    systemctl restart nginx.service
     
     systemctl enable --now cronie.service
     
@@ -412,14 +446,12 @@ show_client_instructions() {
     echo "Logs are available at /var/log/daily-update.log"
     echo
     echo "To use this proxy on your client machines, edit /etc/pacman.conf"
-    echo "and replace the content of your repository sections as follows:"
+    echo "and ADD the proxy 'Server' line to the TOP of each repository section."
+    echo "Keep your existing 'Include' lines to serve as fallbacks."
     echo
     echo "--------------------- /etc/pacman.conf (Client Example) ----------------------"
     echo "#"
     echo "# REPOSITORIES"
-    echo "# - lines starting with a '#' are commented out"
-    echo "# - you can add your own servers here, but they will be used only if"
-    echo "#   all servers defined in the mirrorlist are not reachable"
     echo "#"
     
     echo "[options]"
@@ -434,36 +466,42 @@ show_client_instructions() {
     echo "LocalFileSigLevel = Optional"
     echo
     
-    echo "# --- Official Repositories (via pacoloco proxy) ---"
-    echo "# The '\$repo' variable is filled in by pacman."
+    echo "# --- Official Repositories ---"
     echo "[core]"
     echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/archlinux/\$repo/os/\$arch"
+    echo "Include = /etc/pacman.d/mirrorlist"
     echo
     echo "[extra]"
     echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/archlinux/\$repo/os/\$arch"
+    echo "Include = /etc/pacman.d/mirrorlist"
     echo
     echo "[multilib]"
     echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/archlinux/\$repo/os/\$arch"
+    echo "Include = /etc/pacman.d/mirrorlist"
     echo
     
-    echo "# --- Chaotic AUR (via pacoloco proxy) ---"
+    echo "# --- Chaotic AUR ---"
     echo "[chaotic-aur]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/chaotic-aur/\\\$arch"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/chaotic-aur/\$arch"
+    echo "Include = /etc/pacman.d/chaotic-mirrorlist"
     echo
     
-    echo "# --- Garuda (via pacoloco proxy) ---"
+    echo "# --- Garuda ---"
     echo "[garuda]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/garuda/\\\$arch"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/garuda/\$arch"
+    echo "Include = /etc/pacman.d/chaotic-mirrorlist"
     echo
     
-    echo "# --- LizardByte Repos (via pacoloco proxy) ---"
+    echo "# --- LizardByte Repos ---"
     echo "[lizardbyte]"
     echo "SigLevel = Optional"
     echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/lizardbyte"
+    echo "Server = https://github.com/LizardByte/pacman-repo/releases/latest/download"
     echo
     echo "[lizardbyte-beta]"
     echo "SigLevel = Optional"
     echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/lizardbyte-beta"
+    echo "Server = https://github.com/LizardByte/pacman-repo/releases/download/beta"
     echo "--------------------------------------------------------------------------"
     echo
     echo "**IMPORTANT:** Remember to replace '${server_ip}' with your server's public IP"
