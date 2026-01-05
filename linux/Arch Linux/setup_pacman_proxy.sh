@@ -347,6 +347,53 @@ enable_services() {
     systemctl status cronie.service --no-pager
 }
 
+# Function to configure the server's own pacman to use the local cache
+configure_local_pacman() {
+    echo "--- Configuring Server to Use Local Cache ---"
+    
+    # Backup the current pacman.conf if a backup doesn't already exist
+    if [[ ! -f /etc/pacman.conf.bak ]]; then
+        cp /etc/pacman.conf /etc/pacman.conf.bak
+        echo "Backed up /etc/pacman.conf to /etc/pacman.conf.bak"
+    fi
+
+    # Define the local proxy URL (direct to pacoloco, no auth needed)
+    LOCAL_PROXY_URL="http://127.0.0.1:9129"
+
+    # Helper function to insert the proxy server line
+    add_proxy_repo() {
+        local repo_name=$1
+        local proxy_path=$2
+        local server_string="Server = $LOCAL_PROXY_URL/repo/$proxy_path"
+
+        # Check if the repo section exists
+        if grep -q "^\[$repo_name\]" /etc/pacman.conf; then
+            # Check if the proxy line is already in this SPECIFIC section to avoid duplicates
+            # We use sed to extract the block from [$repo_name] to the start of the next section
+            if ! sed -n "/^\[$repo_name\]/,/^\[/p" /etc/pacman.conf | grep -Fq "$server_string"; then
+                # Insert the Server line after the [repo_name] header
+                sed -i "/^\[$repo_name\]/a $server_string" /etc/pacman.conf
+                echo "Added local cache for [$repo_name]"
+            else
+                echo "Local cache already configured for [$repo_name]"
+            fi
+        fi
+    }
+
+    # Apply to standard repos
+    add_proxy_repo "core" "archlinux/\$repo/os/\$arch"
+    add_proxy_repo "extra" "archlinux/\$repo/os/\$arch"
+    add_proxy_repo "multilib" "archlinux/\$repo/os/\$arch"
+
+    # Apply to Chaotic AUR
+    add_proxy_repo "chaotic-aur" "chaotic-aur/\$arch"
+
+    # Apply to Garuda
+    add_proxy_repo "garuda" "garuda/\$arch"
+
+    echo "Server is now configured to use its own local cache for updates."
+}
+
 # Function to configure automatic daily updates and reboots
 configure_autoupdate() {
     echo "--- Configuring Automatic Daily Updates ---"
@@ -520,6 +567,7 @@ main() {
     configure_pacoloco
     configure_nginx
     enable_services
+    configure_local_pacman
     configure_autoupdate
     show_client_instructions
 }
