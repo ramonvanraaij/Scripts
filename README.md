@@ -58,6 +58,7 @@ Here are some of a few key scripts in this collection:
 *   **`linux/batocera/symlink_roms.sh`**: A Bash script for smart symlinking of ROM folders on Batocera/RetroDeck, consolidating alternative system names and preserving metadata.
 *   **`linux/Arch Linux/setup-snapd.sh`**: Automates the installation and configuration of Snapd and the Snap Store on Arch Linux.
 *   **`linux/Arch Linux/setup_pacman_proxy.sh`**: Automates the setup of a secure, caching Arch Linux package proxy using `pacoloco` and `nginx`. Supports headless deployment, smart defaults, and high-reliability mirrors.
+*   **`linux/Arch Linux/setup_apt_proxy.sh`**: Automates the setup of `apt-cacher-ng` as a caching proxy for Debian/Ubuntu, integrated with the Nginx reverse proxy (add-on to `setup_pacman_proxy.sh`).
 *   **`linux/batocera/create_m3u.py`**: A Python script that scans for multi-disc games (e.g., .chd) and generates .m3u playlists, allowing frontends like Batocera to treat them as single entries.
 
 ## Getting Started
