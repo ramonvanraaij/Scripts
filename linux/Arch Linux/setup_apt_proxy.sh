@@ -34,6 +34,7 @@ PROXY_PASS="${PROXY_PASS:-}"
 
 # --- Functions ---
 
+# Function to ensure the script is run as root
 check_root() {
     if [[ "${EUID}" -ne 0 ]]; then
         echo "ERROR: This script must be run as root."
@@ -41,6 +42,7 @@ check_root() {
     fi
 }
 
+# Function to check if Nginx is installed and configured
 check_dependencies() {
     if ! command -v nginx &> /dev/null; then
         echo "ERROR: Nginx is not installed. Run setup_pacman_proxy.sh first."
@@ -52,6 +54,7 @@ check_dependencies() {
     fi
 }
 
+# Function to enable Chaotic-AUR if not already present
 enable_chaotic_aur() {
     echo "--- Enabling Chaotic-AUR ---"
     
@@ -80,6 +83,7 @@ EOF
     pacman -Sy
 }
 
+# Function to install apt-cacher-ng via AUR (using yay)
 install_apt_cacher_ng() {
     echo "--- Installing Apt-Cacher-NG ---"
     
@@ -130,6 +134,7 @@ install_apt_cacher_ng() {
     echo "Apt-Cacher-NG is running."
 }
 
+# Function to configure apt-cacher-ng settings (expiration, etc.)
 configure_acng() {
     echo "--- Configuring Apt-Cacher-NG Settings ---"
     local ACNG_CONF="/etc/apt-cacher-ng/acng.conf"
@@ -148,6 +153,7 @@ configure_acng() {
     echo "Apt-Cacher-NG settings updated."
 }
 
+# Function to inject the /apt/ location block into Nginx configuration
 inject_nginx_config() {
     echo "--- Configuring Nginx ---"
     
@@ -184,6 +190,7 @@ EOF
     echo "Injection complete."
 }
 
+# Function to validate and restart Nginx
 validate_config() {
     echo "--- Validating Nginx Configuration ---"
     if ! nginx -t; then
@@ -195,6 +202,7 @@ validate_config() {
     systemctl restart nginx
 }
 
+# Function to test the proxy connection
 test_proxy() {
     echo "--- Testing Proxy Functionality ---"
     
@@ -225,6 +233,7 @@ test_proxy() {
     fi
 }
 
+# Function to display client configuration instructions
 show_client_instructions() {
     local server_ip
     server_ip=$(ip addr | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | cut -d/ -f1 | head -n1)
