@@ -5,6 +5,7 @@
 #
 # Copyright (c) 2026 Rámon van Raaij
 # License: MIT
+# Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
 # **IMPORTANT:**
 # This script is an ADDITION to setup_pacman_proxy.sh.
@@ -105,8 +106,19 @@ install_apt_cacher_ng() {
         userdel -r builder
     fi
     
+    echo "Configuring backends..."
+    # Ensure backend files exist in /etc/apt-cacher-ng/ with correct paths
+    # The default might be missing the /debian suffix
+    echo "http://ftp.debian.org/debian/" > /etc/apt-cacher-ng/backends_debian
+    
+    if [[ ! -f /etc/apt-cacher-ng/backends_ubuntu ]]; then
+        cp /usr/lib/apt-cacher-ng/backends_ubuntu.default /etc/apt-cacher-ng/backends_ubuntu || true
+    fi
+
     echo "Starting apt-cacher-ng service..."
     systemctl enable --now apt-cacher-ng
+    # Restart to pick up backend changes
+    systemctl restart apt-cacher-ng
     
     # Wait a moment for the service to bind to the port
     sleep 2
@@ -116,6 +128,24 @@ install_apt_cacher_ng() {
         exit 1
     fi
     echo "Apt-Cacher-NG is running."
+}
+
+configure_acng() {
+    echo "--- Configuring Apt-Cacher-NG Settings ---"
+    local ACNG_CONF="/etc/apt-cacher-ng/acng.conf"
+    
+    # Backup config
+    cp "$ACNG_CONF" "${ACNG_CONF}.bak"
+    
+    # Set ExThreshold to 28 days
+    sed -i 's/^#\?\s*ExThreshold:.*/ExThreshold: 28/' "$ACNG_CONF"
+    
+    # Keep extra versions (approximate "keep last 2 versions")
+    sed -i 's/^#\?\s*KeepExtraVersions:.*/KeepExtraVersions: 1/' "$ACNG_CONF"
+    
+    # Restart to apply
+    systemctl restart apt-cacher-ng
+    echo "Apt-Cacher-NG settings updated."
 }
 
 inject_nginx_config() {
@@ -161,8 +191,8 @@ validate_config() {
         exit 1
     fi
     
-    echo "Reloading Nginx..."
-    systemctl reload nginx
+    echo "Restarting Nginx..."
+    systemctl restart nginx
 }
 
 test_proxy() {
@@ -195,15 +225,55 @@ test_proxy() {
     fi
 }
 
+show_client_instructions() {
+    local server_ip
+    server_ip=$(ip addr | grep 'inet ' | grep -v '127.0.0.1' | awk '{print $2}' | cut -d/ -f1 | head -n1)
+    # Default port from setup_pacman_proxy.sh if not set
+    local port="${NGINX_PORT:-80}"
+
+    echo "================================================================="
+    echo "✅ Apt-Cacher-NG Proxy Setup Complete!"
+    echo "================================================================="
+    echo
+    echo "Your Apt proxy is running at: http://${server_ip}:${port}/apt/"
+    echo "Username: ${PROXY_USER:-<your_username>}"
+    echo "Password: ${PROXY_PASS:-<your_password>}"
+    echo
+    echo "To use this proxy securely on your Debian/Ubuntu client machines:"
+    echo
+    echo "1. Configure authentication in /etc/apt/auth.conf:"
+    echo "   (Create the file if it doesn't exist, and make it readable only by root)"
+    echo "   -----------------------------------------------------------------"
+    echo "   machine http://${server_ip} login ${PROXY_USER:-user} password ${PROXY_PASS:-pass}"
+    echo "   -----------------------------------------------------------------"
+    echo "   Command: echo 'machine http://${server_ip} login ${PROXY_USER:-user} password ${PROXY_PASS:-pass}' | sudo tee -a /etc/apt/auth.conf > /dev/null && sudo chmod 600 /etc/apt/auth.conf"
+    echo
+    echo "2. Edit your /etc/apt/sources.list to point to the proxy (without credentials):"
+    echo "   -----------------------------------------------------------------"
+    echo "   # Main Debian Repo"
+    echo "   deb http://${server_ip}:${port}/apt/debian stable main"
+    echo
+    echo "   # Security Updates"
+    echo "   deb http://${server_ip}:${port}/apt/debian-security stable-security main"
+    echo
+    echo "   # Updates"
+    echo "   deb http://${server_ip}:${port}/apt/debian stable-updates main"
+    echo "   -----------------------------------------------------------------"
+    echo
+    echo "**IMPORTANT:** Remember to replace '${server_ip}' with your server's public IP"
+    echo "or domain name if you are accessing it from the internet."
+}
+
 # --- Main ---
 main() {
     check_root
     check_dependencies
     enable_chaotic_aur
     install_apt_cacher_ng
+    configure_acng
     inject_nginx_config
     validate_config
     test_proxy
+    show_client_instructions
 }
-
 main
