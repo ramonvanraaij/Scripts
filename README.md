@@ -57,6 +57,8 @@ Here are some of a few key scripts in this collection:
 *   **`linux/batocera/dedupe_roms.py`**: A Python script for intelligent ROM deduplication on Batocera/RetroDeck, using generation, year, region, and file size to determine the best version, with special handling for MAME/FBNeo and handhelds.
 *   **`linux/batocera/symlink_roms.sh`**: A Bash script for smart symlinking of ROM folders on Batocera/RetroDeck, consolidating alternative system names and preserving metadata.
 *   **`linux/Arch Linux/setup-snapd.sh`**: Automates the installation and configuration of Snapd and the Snap Store on Arch Linux.
+*   **`linux/Arch Linux/setup_pacman_proxy.sh`**: Automates the setup of a secure, caching Arch Linux package proxy using `pacoloco` and `nginx`. Supports headless deployment, smart defaults, and high-reliability mirrors.
+*   **`linux/batocera/create_m3u.py`**: A Python script that scans for multi-disc games (e.g., .chd) and generates .m3u playlists, allowing frontends like Batocera to treat them as single entries.
 
 ## Getting Started
 
@@ -103,4 +105,4 @@ This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md
 
 ## Copyright
 
-Copyright (c) 2024-2025 Rámon van Raaij
+Copyright (c) 2024-2026 Rámon van Raaij
