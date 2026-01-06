@@ -290,11 +290,12 @@ http {
         proxy_cache_valid 404 1m;
 
         # --- Location for database files (NO CACHING) ---
-        location ~ \.db(\.sig)?$ {
+        location ~ ^/pacman/.*\.db(\.sig)?$ {
             # Never cache database files as they change frequently
             proxy_no_cache 1;
             proxy_cache_bypass 1;
 
+            rewrite ^/pacman/(.*)$ /\$1 break;
             proxy_pass http://127.0.0.1:9129;
             proxy_set_header Host \$host;
             proxy_set_header X-Real-IP \$remote_addr;
@@ -303,10 +304,10 @@ http {
         }
         
         # --- Location Block for Proxying to Pacoloco ---
-        location / {
+        location /pacman/ {
             proxy_buffering off;
             proxy_hide_header Content-Length;
-            proxy_pass http://127.0.0.1:9129;
+            proxy_pass http://127.0.0.1:9129/;
             proxy_set_header Host \$host;
             proxy_set_header X-Real-IP \$remote_addr;
             proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -515,39 +516,39 @@ show_client_instructions() {
     
     echo "# --- Official Repositories ---"
     echo "[core]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/archlinux/\$repo/os/\$arch"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/pacman/repo/archlinux/\$repo/os/\$arch"
     echo "Include = /etc/pacman.d/mirrorlist"
     echo
     echo "[extra]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/archlinux/\$repo/os/\$arch"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/pacman/repo/archlinux/\$repo/os/\$arch"
     echo "Include = /etc/pacman.d/mirrorlist"
     echo
     echo "[multilib]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/archlinux/\$repo/os/\$arch"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/pacman/repo/archlinux/\$repo/os/\$arch"
     echo "Include = /etc/pacman.d/mirrorlist"
     echo
     
     echo "# --- Chaotic AUR ---"
     echo "[chaotic-aur]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/chaotic-aur/\$arch"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/pacman/repo/chaotic-aur/\$arch"
     echo "Include = /etc/pacman.d/chaotic-mirrorlist"
     echo
     
     echo "# --- Garuda ---"
     echo "[garuda]"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/garuda/\$arch"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/pacman/repo/garuda/\$arch"
     echo "Include = /etc/pacman.d/chaotic-mirrorlist"
     echo
     
     echo "# --- LizardByte Repos ---"
     echo "[lizardbyte]"
     echo "SigLevel = Optional"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/lizardbyte"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/pacman/repo/lizardbyte"
     echo "Server = https://github.com/LizardByte/pacman-repo/releases/latest/download"
     echo
     echo "[lizardbyte-beta]"
     echo "SigLevel = Optional"
-    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/repo/lizardbyte-beta"
+    echo "Server = http://${PROXY_USER}:${PROXY_PASS}@${server_ip}:${NGINX_PORT}/pacman/repo/lizardbyte-beta"
     echo "Server = https://github.com/LizardByte/pacman-repo/releases/download/beta"
     echo "--------------------------------------------------------------------------"
     echo
