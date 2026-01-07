@@ -260,13 +260,13 @@ show_client_instructions() {
     echo "2. Edit your /etc/apt/sources.list to point to the proxy (without credentials):"
     echo "   -----------------------------------------------------------------"
     echo "   # Main Debian Repo"
-    echo "   deb http://${server_ip}:${port}/apt/debian stable main"
+    echo "   deb http://${server_ip}:${port}/apt/debian trixie contrib main"
     echo
-    echo "   # Security Updates"
-    echo "   deb http://${server_ip}:${port}/apt/debian-security stable-security main"
+    echo "   # Security Updates (mapped to debian-security)"
+    echo "   deb http://${server_ip}:${port}/apt/debian-security trixie-security contrib main"
     echo
-    echo "   # Updates"
-    echo "   deb http://${server_ip}:${port}/apt/debian stable-updates main"
+    echo "   # Updates (usually on main mirror)"
+    echo "   deb http://${server_ip}:${port}/apt/debian trixie-updates contrib main"
     echo "   -----------------------------------------------------------------"
     echo
     echo "**IMPORTANT:** Remember to replace '${server_ip}' with your server's public IP"
