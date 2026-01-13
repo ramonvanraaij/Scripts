@@ -49,6 +49,8 @@ The repository is organized as follows:
 Here are some of a few key scripts in this collection:
 
 *   **`linux/Arch Linux/system-update.sh`**: Automates daily system updates on Arch Linux, including `pacman` and `yay` packages, and pulls updates for local git repositories.
+*   **`linux/Debian/upgrade_npm_trixie.sh`**: Automates the in-place upgrade and repair of Nginx Proxy Manager on Debian, including compiling OpenResty with legacy PCRE support and fixing Python/Node.js version mismatches during a Bookworm to Trixie upgrade.
+*   **`linux/Debian/setup-qnap-qsync-debian.sh`**: Automates the installation of the QNAP Qsync client on Debian/Ubuntu systems, handling dependencies and fetching the latest version from QNAP's official feed.
 *   **`linux/backup_wordpress.sh`**: A comprehensive script for backing up a WordPress site, including the database and files. It supports remote backups, rotation, and email notifications.
 *   **`linux/nginx/update-cloudflare-ips.sh`**: Automatically updates Nginx's trusted proxy list for Cloudflare IPs to ensure correct IP address resolution.
 *   **`linux/backup-to-git.py`**: A Python script that uses `rsync` to back up files and directories to a local Git repository and pushes the changes to a remote repository.

@@ -24,7 +24,8 @@
 # 5. Compiles OpenResty 1.25.3.1 with legacy PCRE 1 support.
 # 6. Upgrades Node.js to the system version (v20+).
 # 7. Downloads, patches, and deploys the latest NPM source code.
-# 8. Restarts services and verifies status.
+# 8. Fixes Nginx service conflicts (killing rogue processes).
+# 9. Restarts services and verifies status.
 #
 # Usage:
 #   chmod +x upgrade_npm_trixie.sh
@@ -38,7 +39,7 @@
 set -o errexit -o nounset -o pipefail
 
 # --- Configuration ---
-readonly OPENRESTY_VERSION="1.25.3.1"
+readonly OPENRESTY_VERSION="1.27.1.2"
 readonly PCRE_VERSION="8.45"
 readonly NPM_TAG="v2.13.5"
 readonly APP_DIR="/app"
@@ -93,7 +94,8 @@ upgrade_debian() {
 install_dependencies() {
     log "Installing build dependencies..."
     apt-get update
-    apt-get install -y build-essential libpcre2-dev libssl-dev zlib1g-dev wget curl git python3-venv python3-pip python3-dev
+    # Added psmisc for killall command needed in fix_nginx_service
+    apt-get install -y build-essential libpcre2-dev libssl-dev zlib1g-dev wget curl git python3-venv python3-pip python3-dev psmisc lsof
 }
 
 fix_certbot() {
@@ -193,6 +195,20 @@ deploy_npm() {
     npm install --production
 }
 
+fix_nginx_service() {
+    log "Fixing Nginx service conflicts..."
+    
+    # Check if port 80 is occupied by an old nginx process
+    if lsof -i :80 | grep -q nginx; then
+        log "Found old Nginx process holding port 80. Killing it..."
+        killall nginx || true
+        sleep 2
+    fi
+
+    log "Restarting OpenResty service..."
+    systemctl restart openresty
+}
+
 main() {
     check_root
     upgrade_debian
@@ -201,10 +217,10 @@ main() {
     compile_openresty
     upgrade_nodejs
     deploy_npm
+    fix_nginx_service
     
-    log "Restarting Services..."
+    log "Restarting Backend Service..."
     systemctl restart npm
-    [ "$(systemctl is-active nginx)" = "active" ] && systemctl restart nginx
     
     log "Upgrade complete. Verified on port 81."
 }
