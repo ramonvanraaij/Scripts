@@ -122,6 +122,40 @@ Manually patch `package.json` before building:
 sed -i 's/"version": "2.0.0"/"version": "2.13.5"/' package.json
 ```
 
+---
+
+### Issue E: Service Name Confusion & Port Conflicts
+**Symptom:**
+Running `systemctl restart nginx` failed with `Unit nginx.service not found`. Even after using the correct `openresty` service, it failed with `Address already in use` errors (bind failed on 0.0.0.0:80).
+
+**Cause:**
+Two things were happening:
+1.  The Proxmox community script uses `openresty` as the service name, not `nginx`.
+2.  The old nginx process from before the upgrade was still running in the background, holding onto port 80 and 443. The new service couldn't start because the ports were occupied by this "zombie" process.
+
+**Solution:**
+Identify the rogue process, kill it, and then restart the correct service.
+
+```bash
+# Find the process holding port 80
+lsof -i :80
+
+# If 'killall' is missing, install it (required for minimal installs)
+apt-get install -y psmisc
+
+# Kill the old nginx processes
+killall nginx
+
+# Restart the correct OpenResty service
+systemctl restart openresty
+```
+
+Restart Services:
+```bash
+systemctl restart npm
+systemctl restart openresty
+```
+
 ## 3. Automation
 A script `upgrade_npm_trixie.sh` has been created in this directory. It automates:
 1.  OS Upgrade prompts.
