@@ -150,10 +150,35 @@ killall nginx
 systemctl restart openresty
 ```
 
-Restart Services:
+---
+
+### Issue F: Internal Error (Missing Nginx Config)
+**Symptom:**
+When creating or updating a Proxy Host in the UI, an "Internal Error" occurred. The backend logs showed:
+```text
+nginx: [emerg] open() "/usr/local/openresty/nginx/conf/conf.d/include/proxy.conf" failed (2: No such file or directory)
+```
+**Cause:**
+The compiled OpenResty installation installs default Nginx configs, but Nginx Proxy Manager relies on specific included configuration files (like `proxy.conf`, `ssl-ciphers.conf`) that are typically provided in the `docker/rootfs` directory of the source. These were not copied during the manual deployment.
+
+**Solution:**
+Copy the missing configuration files from the source `docker/rootfs` to the OpenResty configuration directory.
 ```bash
-systemctl restart npm
-systemctl restart openresty
+cp -r docker/rootfs/etc/nginx/conf.d/include /usr/local/openresty/nginx/conf/conf.d/
+systemctl reload openresty
+```
+
+---
+
+### Issue G: Logrotate Group Error
+**Symptom:**
+Logs showed: `error: /etc/logrotate.d/nginx-proxy-manager:2 unknown group 'npm'`.
+**Cause:**
+The logrotate configuration expects the `npm` group to exist, but the system runs Nginx as `root` (or the user/group was not created).
+**Solution:**
+Update the logrotate configuration to use root.
+```bash
+sed -i 's/su npm npm/su root root/g' /etc/logrotate.d/nginx-proxy-manager
 ```
 
 ## 3. Automation
@@ -161,4 +186,5 @@ A script `upgrade_npm_trixie.sh` has been created in this directory. It automate
 1.  OS Upgrade prompts.
 2.  OpenResty + Legacy PCRE compilation.
 3.  Node.js upgrade and cleanup.
-4.  NPM patching and deployment.
+4.  NPM patching and deployment (including missing Nginx configs).
+5.  Nginx service conflicts (killing rogue processes).

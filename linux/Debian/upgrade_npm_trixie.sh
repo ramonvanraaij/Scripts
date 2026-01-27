@@ -190,6 +190,10 @@ deploy_npm() {
     mkdir -p "${APP_DIR}/frontend"
     cp -r frontend/dist/* "${APP_DIR}/frontend/"
 
+    log "Deploying default Nginx configuration..."
+    mkdir -p /usr/local/openresty/nginx/conf/conf.d
+    cp -r docker/rootfs/etc/nginx/conf.d/include /usr/local/openresty/nginx/conf/conf.d/
+
     log "Installing Backend Dependencies..."
     cd "${APP_DIR}"
     npm install --production
