@@ -47,8 +47,14 @@ readonly FROM_ADDRESS="LEMP Backup <backup@your-server.com>"
 readonly RECIPIENT_ADDRESS="your-email@example.com"
 
 # --- Database Credentials ---
-readonly DB_USER="root"
-readonly DB_PASSWORD='strong_root_password'
+# These can be set here directly or provided via environment variables.
+# 
+# Usage with environment variables:
+# - Via command line: DB_USER=user DB_PASSWORD=pass ./restic_backup.sh
+# - Via Cron: 0 2 * * * DB_USER=user DB_PASSWORD=pass /path/to/restic_backup.sh
+# - Via .env file: source my-secrets.env && ./restic_backup.sh
+DB_USER="${DB_USER:-root}"
+DB_PASSWORD="${DB_PASSWORD:-strong_root_password}"
 
 # --- Paths & Retention ---
 # A list of all files and directories to back up.

@@ -38,14 +38,17 @@
 
 # --- Configuration ---
 # REQUIRED: Get this from your Cloudflare dashboard.
-CLOUDFLARE_API_TOKEN="YOUR_API_TOKEN"
+# Can be set here or via the CLOUDFLARE_API_TOKEN environment variable.
+CLOUDFLARE_API_TOKEN="${CLOUDFLARE_API_TOKEN:-YOUR_API_TOKEN}"
 
-# OPTIONAL: You can set the Zone ID here. If you leave it blank or as the
-# default placeholder, the script will ask you to enter it when you run it.
-CLOUDFLARE_ZONE_ID="YOUR_ZONE_ID"
+# OPTIONAL: You can set the Zone ID here or via CLOUDFLARE_ZONE_ID.
+# If left as the default placeholder, the script will ask for it in interactive mode.
+CLOUDFLARE_ZONE_ID="${CLOUDFLARE_ZONE_ID:-YOUR_ZONE_ID}"
 
 # The URL of the text file containing the list of URLs to purge.
-readonly URL_LIST="https://ramon.vanraaij.eu/llms.txt"
+# This file can be generated using the Yoast SEO plugin for WordPress, 
+# which is what this script has been tested with.
+readonly URL_LIST="https://example.com/llms.txt"
 
 # --- Script Configuration ---
 # Exit on error, treat unset variables as an error, and fail on piped command errors.

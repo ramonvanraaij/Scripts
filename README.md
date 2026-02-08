@@ -24,13 +24,28 @@ Many scripts in this repository rely on common command-line tools. Please ensure
 
 ## Secrets Management
 
-Scripts that require sensitive information, such as API keys or passwords, will have placeholders in the script itself. For example, in `cloudflare-cache-purge.sh`, you will find:
+**Important:** Never store sensitive information, such as API keys or passwords, directly in your scripts.
+
+Scripts that require sensitive information will have placeholders. For example, in `linux/cloudflare/cloudflare-cache-purge.sh`, you will find:
 
 ```bash
 CLOUDFLARE_API_TOKEN="YOUR_API_TOKEN"
 ```
 
-It is recommended to replace these placeholders with a secure method of secrets management, such as environment variables or a dedicated secrets management tool.
+It is highly recommended to replace these placeholders with a secure method of secrets management, such as environment variables or a dedicated secrets management tool.
+
+For example, you can create a `.env` file (which is already ignored by git in this repo):
+
+```bash
+# cloudflare.env
+export CLOUDFLARE_API_TOKEN="YOUR_API_TOKEN"
+```
+
+Then, source the file before running your script:
+
+```bash
+source cloudflare.env && ./linux/cloudflare/cloudflare-cache-purge.sh
+```
 
 ## Directory Structure
 
@@ -62,6 +77,11 @@ Here are some of a few key scripts in this collection:
 *   **`linux/Arch Linux/setup_pacman_proxy.sh`**: Automates the setup of a secure, caching Arch Linux package proxy using `pacoloco` and `nginx`. Supports headless deployment, smart defaults, and high-reliability mirrors.
 *   **`linux/Arch Linux/setup_apt_proxy.sh`**: Automates the setup of `apt-cacher-ng` as a caching proxy for Debian/Ubuntu, integrated with the Nginx reverse proxy (add-on to `setup_pacman_proxy.sh`).
 *   **`linux/batocera/create_m3u.py`**: A Python script that scans for multi-disc games (e.g., .chd) and generates .m3u playlists, allowing frontends like Batocera to treat them as single entries.
+*   **`linux/ollama/ollama_bench.sh`**: A performance benchmarking script for models served by the Ollama API, calculating TTFT, prefill speed, and decode speed.
+*   **`linux/Proxmox/update-proxmox-cloudflare-ips.sh`**: Automates the update of a Proxmox Firewall IPSet with the latest Cloudflare IP ranges.
+*   **`linux/Proxmox/proxmox_vm_lxc_watchdog.sh`**: A watchdog script for Proxmox that monitors VMs and LXC containers, automatically restarting those that are stopped but configured to start on boot.
+*   **`linux/Alpine Linux/restic_backup.sh`**: Automates backups to a Restic repository on Alpine Linux, including database dumps and rotation.
+*   **`linux/Proxmox Mail Gateway/pmg_backup.sh`**: A backup and rotation script for Proxmox Mail Gateway (PMG) configurations.
 
 ## Getting Started
 
