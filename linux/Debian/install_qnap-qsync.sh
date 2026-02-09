@@ -1,11 +1,12 @@
 #!/bin/bash
 
-# Check if KDE Plasma Wayland is installed (optional)
-if grep -q "KDE Plasma (Wayland)" /etc/xdg/desktop/kde-plasma.desktop; then
-  echo "KDE Plasma Wayland detected."
-else
-  echo "KDE Plasma Wayland not detected."
-fi
+# Copyright (c) 2024 Rámon van Raaij
+
+# License: MIT
+
+# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+
+# install_qnap-qsync.sh - This script installs QNAP Qsync on Ubuntu. It updates package lists, installs dependencies, downloads the latest Qsync package, installs it using dpkg, fixes dependency issues, and optionally removes the downloaded file.
 
 # Update package lists
 echo "Updating package lists..."
@@ -16,8 +17,7 @@ echo "Installing dependencies..."
 sudo apt install libasound2 libxtst6 libnss3 libusb-1.0-0 qtwayland5
 
 # Download the latest Qsync package for Ubuntu (x64)
-# Replace LATEST with the actual version number from https://www.qnap.com/en/utilities/essentials#utliity_3
-DOWNLOAD_URL="https://download.qnap.com/Storage/Utility/QNAPQsyncClientUbuntux64-LATEST.deb"
+DOWNLOAD_URL=$(curl -sL https://update.qnap.com/SoftwareRelease.xml | xmllint --xpath '/docRoot/utility/application[applicationName="com.qnap.qsync"]/platform[platformName="Ubuntu"]/software/downloadURL' - | sed 's/<\/downloadURL>//; s/<downloadURL>//'| head -n 1)
 DOWNLOAD_FILE="QNAPQsyncClientUbuntux64.deb"
 
 wget -O "$DOWNLOAD_FILE" "$DOWNLOAD_URL"
