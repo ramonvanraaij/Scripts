@@ -255,9 +255,24 @@ if ask_yes_no "Do you want to install Homebrew? (y/n)"; then
 
   # Check if fish is installed
   if command -v fish >/dev/null 2>&1; then
-    echo '# Homebrew (fish)' >> ~/.config/fish/config.fish
-    echo '[ -d /home/linuxbrew/.linuxbrew ] && eval $(/home/linuxbrew/.linuxbrew/bin/brew shellenv)' >> ~/.config/fish/config.fish
-    echo 'export XDG_DATA_DIRS="/home/linuxbrew/.linuxbrew/share:$XDG_DATA_DIRS"' >> ~/.config/fish/config.fish
+    mkdir -p ~/.config/fish
+    if [ ! -f ~/.config/fish/config.fish ]; then
+      cat <<EOF > ~/.config/fish/config.fish
+if status is-interactive
+    # Commands to run in interactive sessions can go here
+# Homebrew
+if test -d /home/linuxbrew/.linuxbrew
+    /home/linuxbrew/.linuxbrew/bin/brew shellenv | source
+end
+end
+EOF
+    else
+      echo '# Homebrew' >> ~/.config/fish/config.fish
+      echo 'if test -d /home/linuxbrew/.linuxbrew' >> ~/.config/fish/config.fish
+      echo '    /home/linuxbrew/.linuxbrew/bin/brew shellenv | source' >> ~/.config/fish/config.fish
+      echo 'end' >> ~/.config/fish/config.fish
+    fi
+    echo 'set -gx XDG_DATA_DIRS "/home/linuxbrew/.linuxbrew/share:$XDG_DATA_DIRS"' >> ~/.config/fish/config.fish
   fi
 
   # Make it working right away
