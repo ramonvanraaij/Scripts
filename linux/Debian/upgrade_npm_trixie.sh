@@ -174,9 +174,9 @@ deploy_npm() {
     cd "nginx-proxy-manager-${NPM_TAG#v}"
 
     log "Patching version numbers..."
-    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"" package.json
-    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"" frontend/package.json
-    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"" backend/package.json
+    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"/" package.json
+    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"/" frontend/package.json
+    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"/" backend/package.json
 
     log "Building Frontend..."
     (cd frontend && npm install && npm run locale-compile && npm run build)
