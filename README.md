@@ -61,7 +61,7 @@ The repository is organized as follows:
 
 ## Key Scripts
 
-Here are some of a few key scripts in this collection:
+Here are a few key scripts in this collection:
 
 *   **`linux/Arch Linux/system-update.sh`**: Automates daily system updates on Arch Linux, including `pacman` and `yay` packages, and pulls updates for local git repositories.
 *   **`linux/Debian/upgrade_npm_trixie.sh`**: Automates the in-place upgrade and repair of Nginx Proxy Manager on Debian, including compiling OpenResty with legacy PCRE support and fixing Python/Node.js version mismatches during a Bookworm to Trixie upgrade.
