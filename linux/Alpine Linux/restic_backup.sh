@@ -34,7 +34,7 @@ set -o errexit -o nounset -o pipefail
 # =================================================================
 
 # --- Backup Method ---
-# Choose your backup method: "B2" or "SFTP"
+# Choose your backup method: "B2", "SFTP", or "REST"
 readonly BACKUP_METHOD="SFTP"
 
 # --- SFTP Specific Configuration ---
@@ -84,6 +84,7 @@ readonly KEEP_YEARLY=3
 # Paths to the files containing your Restic repository credentials.
 readonly B2_ENV_FILE="/root/.restic-b2.env"
 readonly SFTP_ENV_FILE="/root/.restic-sftp.env"
+readonly REST_ENV_FILE="/root/.restic-rest.env"
 
 # =================================================================
 # --- Do Not Edit Below This Line ---
@@ -182,8 +183,10 @@ main() {
         env_file="${B2_ENV_FILE}"
     elif [ "$BACKUP_METHOD" == "SFTP" ]; then
         env_file="${SFTP_ENV_FILE}"
+    elif [ "$BACKUP_METHOD" == "REST" ]; then
+        env_file="${REST_ENV_FILE}"
     else
-        log_message "FATAL: Invalid BACKUP_METHOD specified: '${BACKUP_METHOD}'. Must be 'B2' or 'SFTP'."
+        log_message "FATAL: Invalid BACKUP_METHOD specified: '${BACKUP_METHOD}'. Must be 'B2', 'SFTP', or 'REST'."
         exit 1
     fi
 
