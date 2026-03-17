@@ -82,6 +82,7 @@ Here are a few key scripts in this collection:
 *   **`linux/Proxmox/proxmox_vm_lxc_watchdog.sh`**: A watchdog script for Proxmox that monitors VMs and LXC containers, automatically restarting those that are stopped but configured to start on boot.
 *   **`linux/Alpine Linux/restic_backup.sh`**: Automates backups to a Restic repository on Alpine Linux, including database dumps and rotation.
 *   **`linux/Proxmox Mail Gateway/pmg_backup.sh`**: A backup and rotation script for Proxmox Mail Gateway (PMG) configurations.
+*   **`linux/Debian/TrueNAS_SCALE/update_sd_grub.sh`**: Automates updating the Legacy GRUB bootloader on an internal SD card for TrueNAS SCALE (HP MicroServer Gen8 workaround).
 
 ## Getting Started
 
