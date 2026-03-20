@@ -53,7 +53,7 @@ The repository is organized as follows:
 
 *   `linux/`: Contains scripts for various Linux distributions and applications.
     *   `AlmaLinux/`, `Alpine Linux/`, `Arch Linux/`, `Debian/`: Distribution-specific scripts.
-    *   `Distrobox/`, `iSH/`, `nginx/`, `Proxmox/`, `Proxmox Mail Gateway/`: Application-specific scripts.
+    *   `Distrobox/`, `iSH/`, `nginx/`, `QNAP/`, `Proxmox/`, `Proxmox Mail Gateway/`: Application-specific scripts.
     *   `backup_wordpress.sh`, `backup-to-git.py`: General-purpose backup scripts.
 *   `.gitignore`: Excludes common temporary files, packages, and logs.
 *   `LICENSE.md`: The MIT License for the repository.
@@ -83,6 +83,7 @@ Here are a few key scripts in this collection:
 *   **`linux/Alpine Linux/restic_backup.sh`**: Automates backups to a Restic repository on Alpine Linux, including database dumps and rotation.
 *   **`linux/Proxmox Mail Gateway/pmg_backup.sh`**: A backup and rotation script for Proxmox Mail Gateway (PMG) configurations.
 *   **`linux/Debian/TrueNAS_SCALE/update_sd_grub.sh`**: Automates updating the Legacy GRUB bootloader on an internal SD card for TrueNAS SCALE (HP MicroServer Gen8 workaround).
+*   **`linux/QNAP/qnap_realtime_sync.sh`**: A real-time sync daemon for QNAP NAS that monitors directories with `inotifywait` and synchronizes changes to a TrueNAS rsync target, with debouncing, automatic retries, a circuit breaker, log rotation, and SMTP failure alerts.
 
 ## Getting Started
 
