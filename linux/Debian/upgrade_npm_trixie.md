@@ -11,7 +11,7 @@ The decision to perform an in-place upgrade of the operating system and the appl
 This document logs the specific errors, failed attempts, and final solutions encountered while upgrading the host from Debian 12 (Bookworm) to Debian 13 (Trixie) and updating NPM.
 
 ## 1. Operating System Upgrade
-**Goal:** Upgrade Debian Bookworm to Debian Trixie (Testing).
+**Goal:** Upgrade Debian Bookworm to Debian Trixie.
 
 **Impact:**
 *   **Python:** System Python updated from 3.11 to 3.13.
@@ -183,8 +183,11 @@ sed -i 's/su npm npm/su root root/g' /etc/logrotate.d/nginx-proxy-manager
 
 ## 3. Automation
 A script `upgrade_npm_trixie.sh` has been created in this directory. It automates:
-1.  OS Upgrade prompts.
-2.  OpenResty + Legacy PCRE compilation.
-3.  Node.js upgrade and cleanup.
-4.  NPM patching and deployment (including missing Nginx configs).
-5.  Nginx service conflicts (killing rogue processes).
+1.  OS Upgrade prompts (supports both classic `sources.list` and DEB822 format).
+2.  Certbot virtual environment recreation (Python 3.13 fix).
+3.  OpenResty + Legacy PCRE compilation.
+4.  Node.js upgrade and cleanup.
+5.  NPM patching and deployment (including missing Nginx configs).
+6.  Nginx service conflicts (killing rogue processes).
+
+**Note:** The logrotate fix (Issue G) is not included in the script and must be applied manually if needed.

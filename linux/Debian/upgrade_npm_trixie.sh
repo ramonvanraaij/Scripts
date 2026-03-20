@@ -21,7 +21,7 @@
 # 2. Optionally upgrades Debian from Bookworm to Trixie.
 # 3. Installs build dependencies for OpenResty and PCRE.
 # 4. Recreates the Certbot Python virtual environment (Python 3.13 fix).
-# 5. Compiles OpenResty 1.25.3.1 with legacy PCRE 1 support.
+# 5. Compiles OpenResty 1.27.1.2 with legacy PCRE 1 support.
 # 6. Upgrades Node.js to the system version (v20+).
 # 7. Downloads, patches, and deploys the latest NPM source code.
 # 8. Fixes Nginx service conflicts (killing rogue processes).
@@ -70,8 +70,11 @@ upgrade_debian() {
         printf "Current system appears to be Bookworm. Upgrade to Trixie now? (y/n): "
         read -r reply
         if [ "$reply" = "y" ] || [ "$reply" = "Y" ]; then
-            log "Updating sources.list to trixie..."
-            sed -i 's/bookworm/trixie/g' /etc/apt/sources.list
+            log "Updating APT sources to trixie..."
+            # Handle both classic sources.list and DEB822 format (.sources)
+            sed -i 's/bookworm/trixie/g' /etc/apt/sources.list 2>/dev/null || true
+            find /etc/apt/sources.list.d/ -name '*.sources' -exec sed -i 's/bookworm/trixie/g' {} + 2>/dev/null || true
+            find /etc/apt/sources.list.d/ -name '*.list' -exec sed -i 's/bookworm/trixie/g' {} + 2>/dev/null || true
             log "Running update and full-upgrade..."
             apt-get update
             apt-get full-upgrade -y
@@ -130,7 +133,6 @@ compile_openresty() {
     ./configure \
         --with-pcre="${WORK_DIR}/pcre-${PCRE_VERSION}" \
         --with-pcre-jit \
-        --with-ipv6 \
         --with-http_ssl_module \
         --with-http_stub_status_module \
         --with-http_realip_module \
@@ -145,8 +147,7 @@ compile_openresty() {
         --with-http_sub_module \
         --with-stream \
         --with-stream_ssl_module \
-        --with-stream_ssl_preread_module \
-        --with-pcre-opt=-g
+        --with-stream_ssl_preread_module
 
     make -j"$(nproc)"
     make install
@@ -203,7 +204,7 @@ fix_nginx_service() {
     log "Fixing Nginx service conflicts..."
     
     # Check if port 80 is occupied by an old nginx process
-    if lsof -i :80 | grep -q nginx; then
+    if lsof -i :80 2>/dev/null | grep -q nginx; then
         log "Found old Nginx process holding port 80. Killing it..."
         killall nginx || true
         sleep 2
