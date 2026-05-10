@@ -53,6 +53,7 @@ readonly WP_USER="www-data" # The system user that owns the WordPress files
 # --- Global Variables ---
 OS_FAMILY=""
 PKG_MANAGER=""
+PHP_BIN=""
 PHP_PHAR_PKG=""
 PHP_JSON_PKG=""
 
@@ -89,8 +90,9 @@ detect_os() {
     case "${OS_FAMILY}" in
         alpine)
             PKG_MANAGER="apk add"
-            PHP_PHAR_PKG="php-phar"
-            PHP_JSON_PKG="php-json"
+            # On Alpine, PHP packages are versioned (e.g., php83-phar). The exact
+            # package names are determined by detect_php_binary() once we know
+            # which PHP version is installed.
             ;;
         debian|ubuntu)
             PKG_MANAGER="apt-get install -y"
@@ -145,9 +147,45 @@ check_and_install() {
     fi
 }
 
+# Detects the PHP CLI binary and, on Alpine, sets the version-aware package
+# names for the required PHP extensions. Alpine ships PHP as versioned binaries
+# (php82, php83, php84, ...) with no generic 'php' symlink, so a plain
+# 'php -m' check and the bare 'php-phar' package name both fail there.
+detect_php_binary() {
+    log_message "Detecting PHP binary..."
+
+    if command -v php >/dev/null 2>&1; then
+        PHP_BIN="php"
+    elif [ "${OS_FAMILY}" = "alpine" ]; then
+        # Prefer the highest installed phpXY binary.
+        for v in 90 89 88 87 86 85 84 83 82 81 80; do
+            if command -v "php${v}" >/dev/null 2>&1; then
+                PHP_BIN="php${v}"
+                break
+            fi
+        done
+    fi
+
+    if [ -z "${PHP_BIN}" ]; then
+        log_message "FATAL: No PHP binary found. WP-CLI requires PHP to be installed." >&2
+        if [ "${OS_FAMILY}" = "alpine" ]; then
+            log_message "Hint: install a PHP version first, e.g. 'apk add php83 php83-phar'." >&2
+        fi
+        exit 1
+    fi
+
+    log_message "Using PHP binary: ${PHP_BIN}"
+
+    # On Alpine, set the version-specific extension package names.
+    if [ "${OS_FAMILY}" = "alpine" ]; then
+        PHP_PHAR_PKG="${PHP_BIN}-phar"
+        PHP_JSON_PKG="${PHP_BIN}-json"
+    fi
+}
+
 # Checks if a PHP extension is loaded.
 is_php_ext_loaded() {
-    php -m | grep -qi "$1"
+    "${PHP_BIN}" -m | grep -qi "$1"
 }
 
 # Checks for a PHP extension and offers to install it if missing.
@@ -257,8 +295,12 @@ purge_all_cache() {
 # Flushes the WordPress internal caches using WP-CLI.
 purge_wordpress_cache() {
     log_message "Flushing WordPress internal object cache..."
+    local wp_bin
+    wp_bin=$(command -v wp)
+    # WP-CLI uses '#!/usr/bin/env php' as its shebang. On Alpine there is no
+    # plain 'php' command, so invoke it explicitly via the detected PHP binary.
     # Use a non-critical approach; cache flush can fail if no object cache is configured.
-    if ! sudo -u "${WP_USER}" -- wp cache flush --path="${WP_PATH}"; then
+    if ! sudo -u "${WP_USER}" -- "${PHP_BIN}" "${wp_bin}" cache flush --path="${WP_PATH}"; then
         log_message "WARNING: 'wp cache flush' failed. This is often safe if no persistent object cache is used."
     fi
 }
@@ -282,6 +324,7 @@ run_dependency_checks() {
     log_message "--- Checking for required dependencies ---"
     detect_os
     check_and_install "curl" "curl" "'curl' is required to download WP-CLI."
+    detect_php_binary
     check_and_install_php_ext "phar" "${PHP_PHAR_PKG}" "true"
     check_and_install_php_ext "json" "${PHP_JSON_PKG}" "false"
 
