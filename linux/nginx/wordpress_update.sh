@@ -2,7 +2,7 @@
 # wordpress_update.sh
 # =================================================================
 # WordPress Update and Maintenance Script with Logging and Email
-# Copyright (c) 2025 Rámon van Raaij
+# Copyright (c) 2025-2026 Rámon van Raaij
 # License: MIT
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
@@ -22,6 +22,12 @@
 # 3. Schedule it with cron for automated execution: crontab -e
 #    # Example: Run every Saturday at 3:00 AM
 #    0 3 * * 6 /path/to/your/script/wordpress_update.sh
+#
+# **Note:**
+# On systems without a generic 'php' command (e.g. Alpine Linux, which ships
+# versioned binaries such as php83 with no 'php' symlink), WP-CLI is invoked
+# through an auto-detected PHP binary. The highest installed phpXY version is
+# preferred. WP-CLI's '#!/usr/bin/env php' shebang would otherwise fail there.
 # =================================================================
 
 # --- User-defined Variables ---
@@ -30,6 +36,12 @@ readonly WP_USER="www-data"
 readonly WP_PATH="/var/www/html/mysite"
 readonly NGINX_CACHE_PATH="/var/cache/nginx/site"
 readonly CLEAR_NGINX_CACHE="true"
+# Optional: pin the PHP CLI binary used to run WP-CLI. Leave empty to auto-detect
+# (prefers 'php', else the highest installed phpXY). Set to a specific versioned
+# binary (e.g. "php83") when multiple PHP versions are installed and WP-CLI must
+# match the PHP version your site (PHP-FPM) actually runs -- a newer phpXY may
+# lack extensions (ctype, mbstring, ...) that your site's PHP has.
+readonly PHP_BIN_OVERRIDE=""
 
 # Update Configuration
 readonly UPDATE_THEMES="true"
@@ -56,6 +68,10 @@ SCRIPT_LOG_LEVEL=0
 MAINTENANCE_MODE_ACTIVE=false
 # Use parameter expansion to safely handle an empty argument for the optional script.
 readonly OPTIONAL_SCRIPT="${1:-}"
+# PHP CLI and WP-CLI binaries, resolved during the pre-flight checks. Alpine has
+# no generic 'php' symlink, so WP-CLI is invoked as "$PHP_BIN" "$WP_BIN" ...
+PHP_BIN=""
+WP_BIN=""
 
 # --- Functions ---
 
@@ -117,10 +133,10 @@ cleanup() {
 
     # Deactivate maintenance mode only if it was successfully activated.
     # This prevents the site from being stuck in maintenance and avoids unnecessary sudo prompts on pre-flight failures.
-    if [[ "$MAINTENANCE_MODE_ACTIVE" == "true" ]] && sudo -u "$WP_USER" -- wp maintenance-mode is-active --path="$WP_PATH" &>/dev/null; then
+    if [[ "$MAINTENANCE_MODE_ACTIVE" == "true" ]] && sudo -u "$WP_USER" -- "$PHP_BIN" "$WP_BIN" maintenance-mode is-active --path="$WP_PATH" &>/dev/null; then
         log_message "Attempting to disable maintenance mode before exiting..."
         # If deactivation fails, log a warning but don't cause the script to exit non-zero.
-        sudo -u "$WP_USER" -- wp maintenance-mode deactivate --path="$WP_PATH" || log_message "WARNING: Failed to disable maintenance mode automatically."
+        sudo -u "$WP_USER" -- "$PHP_BIN" "$WP_BIN" maintenance-mode deactivate --path="$WP_PATH" || log_message "WARNING: Failed to disable maintenance mode automatically."
     fi
 
     # Determine the final status message based on the highest log level reached.
@@ -148,14 +164,48 @@ handle_error() {
     log_message "Aborting script due to critical error."
 }
 
+# Detects the PHP CLI binary used to run WP-CLI. Honors PHP_BIN_OVERRIDE if set;
+# otherwise prefers a generic 'php' command and falls back to the highest installed
+# versioned binary (php90 down to php80), which is how Alpine Linux ships PHP (no
+# 'php' symlink). Sets PHP_BIN.
+detect_php_binary() {
+    if [[ -n "$PHP_BIN_OVERRIDE" ]]; then
+        # Honor the explicit override, but verify it actually exists.
+        if ! command -v "$PHP_BIN_OVERRIDE" &> /dev/null; then
+            log_message "FATAL: Configured PHP_BIN_OVERRIDE '${PHP_BIN_OVERRIDE}' not found in PATH."
+            SCRIPT_LOG_LEVEL=2
+            exit 1
+        fi
+        PHP_BIN="$PHP_BIN_OVERRIDE"
+    elif command -v php &> /dev/null; then
+        PHP_BIN="php"
+    else
+        local v
+        for v in 90 89 88 87 86 85 84 83 82 81 80; do
+            if command -v "php${v}" &> /dev/null; then
+                PHP_BIN="php${v}"
+                break
+            fi
+        done
+    fi
+
+    if [[ -z "$PHP_BIN" ]]; then
+        log_message "FATAL: No PHP binary found. WP-CLI requires PHP to be installed."
+        SCRIPT_LOG_LEVEL=2
+        exit 1
+    fi
+
+    log_message "Using PHP binary: ${PHP_BIN}"
+}
+
 # A wrapper for CRITICAL WP-CLI commands that MUST succeed.
 # The script will exit if these commands fail.
 run_as_wp_user() {
     log_message "Running CRITICAL WP-CLI command: wp $*"
     local raw_output
     # Capture raw output, which may include color codes.
-    raw_output=$(sudo -u "$WP_USER" -- wp "$@" --path="$WP_PATH")
-    
+    raw_output=$(sudo -u "$WP_USER" -- "$PHP_BIN" "$WP_BIN" "$@" --path="$WP_PATH")
+
     if [[ -n "$raw_output" ]]; then
         # Echo the raw output to the terminal to preserve colors.
         echo "$raw_output"
@@ -174,7 +224,7 @@ run_update_command() {
     # Temporarily disable 'exit on error' to handle the potential failure manually.
     set +o errexit
     # Capture raw output (stdout and stderr), which may include color codes.
-    raw_output=$(sudo -u "$WP_USER" -- wp "$@" --path="$WP_PATH" 2>&1)
+    raw_output=$(sudo -u "$WP_USER" -- "$PHP_BIN" "$WP_BIN" "$@" --path="$WP_PATH" 2>&1)
     local exit_code=$?
     set -o errexit # Re-enable 'exit on error'.
 
@@ -217,6 +267,10 @@ main() {
         SCRIPT_LOG_LEVEL=2
         exit 1
     fi
+    WP_BIN=$(command -v wp)
+
+    # Resolve the PHP binary up front; WP-CLI is invoked through it below.
+    detect_php_binary
 
     if [[ "$EMAIL_ENABLED" == "true" ]] && ! command -v /usr/sbin/sendmail &> /dev/null; then
         log_message "FATAL: sendmail command not found, but email notifications are enabled."
@@ -236,7 +290,7 @@ main() {
 
     log_message "Updating WP-CLI..."
     # WP-CLI update should be run as root. This is a critical command.
-    wp cli update --yes --quiet
+    "$PHP_BIN" "$WP_BIN" cli update --yes --quiet
 
     if [[ "$UPDATE_CORE" == "true" ]]; then
         # Core updates are critical.

@@ -49,6 +49,12 @@ set -o errexit -o nounset -o pipefail
 readonly CACHE_PATH="/var/cache/nginx/example-site"
 readonly WP_PATH="/var/www/example.com/public_html"
 readonly WP_USER="www-data" # The system user that owns the WordPress files
+# Optional: pin the PHP CLI binary used to run WP-CLI. Leave empty to auto-detect
+# (prefers 'php', else the highest installed phpXY on Alpine). Set to a specific
+# versioned binary (e.g. "php83") when multiple PHP versions are installed and
+# WP-CLI must match the PHP version your site (PHP-FPM) actually runs -- a newer
+# phpXY may lack extensions (ctype, mbstring, ...) that your site's PHP has.
+readonly PHP_BIN_OVERRIDE=""
 
 # --- Global Variables ---
 OS_FAMILY=""
@@ -148,13 +154,22 @@ check_and_install() {
 }
 
 # Detects the PHP CLI binary and, on Alpine, sets the version-aware package
-# names for the required PHP extensions. Alpine ships PHP as versioned binaries
-# (php82, php83, php84, ...) with no generic 'php' symlink, so a plain
-# 'php -m' check and the bare 'php-phar' package name both fail there.
+# names for the required PHP extensions. Honors PHP_BIN_OVERRIDE if set; otherwise
+# prefers a generic 'php' command and falls back to the highest installed phpXY.
+# Alpine ships PHP as versioned binaries (php82, php83, php84, ...) with no generic
+# 'php' symlink, so a plain 'php -m' check and the bare 'php-phar' package name
+# both fail there.
 detect_php_binary() {
     log_message "Detecting PHP binary..."
 
-    if command -v php >/dev/null 2>&1; then
+    if [ -n "${PHP_BIN_OVERRIDE}" ]; then
+        # Honor the explicit override, but verify it actually exists.
+        if ! command -v "${PHP_BIN_OVERRIDE}" >/dev/null 2>&1; then
+            log_message "FATAL: Configured PHP_BIN_OVERRIDE '${PHP_BIN_OVERRIDE}' not found in PATH." >&2
+            exit 1
+        fi
+        PHP_BIN="${PHP_BIN_OVERRIDE}"
+    elif command -v php >/dev/null 2>&1; then
         PHP_BIN="php"
     elif [ "${OS_FAMILY}" = "alpine" ]; then
         # Prefer the highest installed phpXY binary.
