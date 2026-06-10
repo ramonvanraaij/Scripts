@@ -3,7 +3,7 @@
 # =================================================================
 # SSH Jump Host Wrapper Script
 # Copyright (c) 2025 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 # =================================================================
 # This script simplifies connecting to a final SSH server via a

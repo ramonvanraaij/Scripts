@@ -3,7 +3,7 @@
 # =================================================================
 # Distrobox Pod Creation Script
 # Copyright (c) 2024-2025 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 # =================================================================
  # This script creates and configures a new Distrobox pod with a choice of operating systems

@@ -56,7 +56,7 @@ The repository is organized as follows:
     *   `Distrobox/`, `iSH/`, `nginx/`, `QNAP/`, `Proxmox/`, `Proxmox Mail Gateway/`: Application-specific scripts.
     *   `backup_wordpress.sh`, `backup-to-git.py`: General-purpose backup scripts.
 *   `.gitignore`: Excludes common temporary files, packages, and logs.
-*   `LICENSE.md`: The MIT License for the repository.
+*   `LICENSE.md`: The BSD 3-Clause License for the repository.
 *   `README.md`: A brief introduction to the script collection.
 
 ## Key Scripts
@@ -126,7 +126,7 @@ These scripts are provided "as is" without warranty of any kind, express or impl
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE.md](LICENSE.md) file for details.
+This project is licensed under the BSD 3-Clause License - see the [LICENSE.md](LICENSE.md) file for details.
 
 ## Copyright
 

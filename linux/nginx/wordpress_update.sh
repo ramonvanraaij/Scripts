@@ -3,7 +3,7 @@
 # =================================================================
 # WordPress Update and Maintenance Script with Logging and Email
 # Copyright (c) 2025-2026 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
 # =================================================================

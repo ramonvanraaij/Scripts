@@ -3,7 +3,7 @@
 # =================================================================
 # Alpine Linux Automatic Update Cronjob and Logger
 # Copyright (c) 2025 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 # =================================================================
 # This script performs the following actions:

@@ -4,7 +4,7 @@
 # A Python script to generate .m3u playlists for multi-disc ROMs
 #
 # Copyright (c) 2025 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
 # This script scans a specified ROMs directory for multi-disc games (e.g.,

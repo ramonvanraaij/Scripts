@@ -2,7 +2,7 @@
 
 # Copyright (c) 2024-2025 Rámon van Raaij
 
-# License: MIT
+# License: BSD-3-Clause
 
 # Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 

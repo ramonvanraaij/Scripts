@@ -4,7 +4,7 @@
 # Debian/Ubuntu Apt-Cacher-NG Proxy Setup (Add-on)
 #
 # Copyright (c) 2026 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
 # **IMPORTANT:**

@@ -3,7 +3,7 @@
 # =================================================================
 # Cloudflare Cache Management Tool
 # Copyright (c) 2025 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 # =================================================================
 # A script to purge the Cloudflare cache for a specific zone, with

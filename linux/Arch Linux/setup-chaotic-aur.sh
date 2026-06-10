@@ -4,7 +4,7 @@
 # Arch Linux Chaotic AUR Setup
 #
 # Copyright (c) 2024-2025 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
 # This script sets up the Chaotic AUR repository for Arch Linux. Chaotic AUR is an 

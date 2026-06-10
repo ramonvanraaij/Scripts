@@ -4,7 +4,7 @@
 # Automated Backup to Git Repository
 #
 # Copyright (c) 2024-2026 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
 # This script uses rsync to back up specified files and directories to a local

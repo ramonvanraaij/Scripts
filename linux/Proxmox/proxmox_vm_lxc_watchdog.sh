@@ -4,7 +4,7 @@
 # Proxmox VM/Container Auto-Starter with Email Notifications
 #
 # Copyright (c) 2026 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
 # This script monitors the status of Proxmox VMs (Qemu) and 

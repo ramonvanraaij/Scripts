@@ -4,7 +4,7 @@
 # QNAP Real-Time Sync to TrueNAS
 #
 # Copyright (c) 2026 Rámon van Raaij
-# License: MIT
+# License: BSD-3-Clause
 # Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
 #
 # This script monitors specific directories on the QNAP NAS for changes
