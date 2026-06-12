@@ -115,6 +115,32 @@ match_foreign="$tmpdir/match_foreign"
 match_all="$tmpdir/match_all"
 match_repo_only="$tmpdir/match_repo_only"
 
+# --- Helpers: indicator-of-compromise reporting and error escalation ---
+# print_ioc_advisory: the call to action shown on every exit-3 path (the normal
+# report and the early error exits), kept in one place to avoid drift.
+print_ioc_advisory() {
+    echo
+    echo "INDICATOR OF COMPROMISE reported above -- treat this as serious:"
+    echo "  - Investigate the flagged install scriptlet or ld.so.preload entry now."
+    echo "  - If confirmed, assume full compromise: back up data, reinstall clean,"
+    echo "    and rotate all credentials (SSH, GitHub, browser sessions, tokens)."
+}
+
+# escalate: shared exit logic so a detected IOC is never lost -- if one was found
+# it wins (exit 3 + advisory), otherwise it is a plain error (exit 1). Used by the
+# early fetch/format/parse exits and by die_or_escalate below.
+escalate() {
+    if [ "$ioc_found" -eq 1 ]; then print_ioc_advisory; exit 3; else exit 1; fi
+}
+
+# die_or_escalate: print a one-line reason ($1) to stderr, then escalate. Guards
+# the otherwise-unguarded collect/intersect commands, whose failure would
+# otherwise abort on the raw command status and drop a detected IOC.
+die_or_escalate() {
+    echo "ERROR: $1" >&2
+    escalate
+}
+
 # --- Indicator-of-compromise checks (local, network-independent) ---
 # Run these first so they still report even if the list fetch below fails. Both
 # are high-signal and low-false-positive: a clean Arch system normally has
@@ -179,7 +205,7 @@ raw=$(curl -fsSL "$LIST_URL") || {
     rc=$?
     echo "ERROR: failed to fetch $LIST_URL (curl exit $rc)" >&2
     # A confirmed indicator outranks an incomplete name check.
-    if [ "$ioc_found" -eq 1 ]; then exit 3; else exit 1; fi
+    escalate
 }
 
 # --- Validate page format ---
@@ -188,7 +214,7 @@ raw=$(curl -fsSL "$LIST_URL") || {
 if ! printf '%s\n' "$raw" | grep -qF -- "$DOC_MARKER"; then
     echo "ERROR: fetched page does not look like the expected note (missing '$DOC_MARKER')." >&2
     echo "       The note layout may have changed; parse is not trustworthy." >&2
-    if [ "$ioc_found" -eq 1 ]; then exit 3; else exit 1; fi
+    escalate
 fi
 
 # --- Parse the package list ---
@@ -209,38 +235,42 @@ fi
         | sort -u >"$infected"
 } || true
 
-pkg_count=$(wc -l <"$infected" | tr -d '[:space:]')
+pkg_count=$(wc -l <"$infected" | tr -d '[:space:]') || die_or_escalate "wc failed (infected count)"
 if [ "$pkg_count" -lt "$MIN_EXPECTED" ]; then
     echo "ERROR: parsed only $pkg_count package(s) (expected >= $MIN_EXPECTED)." >&2
     echo "       The fetch was likely truncated or the note format changed." >&2
-    if [ "$ioc_found" -eq 1 ]; then exit 3; else exit 1; fi
+    escalate
 fi
 
 echo "Checking $pkg_count known infected packages..."
 echo
 
 # --- Collect installed packages ---
+# Each command in this section and the next is guarded with `|| die_or_escalate`
+# so a failure here (e.g. pacman erroring, a full /tmp) cannot silently drop an
+# already-detected IOC: it still exits 3 with the advisory instead of aborting
+# on the raw command status.
 # All installed (always non-empty). pacman -Qq is already one name per line.
-pacman -Qq | sort >"$all_installed"
+pacman -Qq | sort >"$all_installed" || die_or_escalate "could not list installed packages (pacman -Qq)"
 # Foreign only (classic AUR builds). On a system with zero foreign packages
 # pacman -Qmq can exit non-zero; `|| true` keeps that from aborting under set -e.
-{ pacman -Qmq || true; } | sort >"$foreign_installed"
+{ pacman -Qmq || true; } | sort >"$foreign_installed" || die_or_escalate "could not list foreign packages (pacman -Qmq)"
 
 # --- Intersect with the infected list ---
 # All inputs are C-locale sorted, so comm's byte-wise compare agrees with sort.
 # Pass 1: foreign packages only (classic AUR builds).
-comm -12 "$foreign_installed" "$infected" >"$match_foreign"
+comm -12 "$foreign_installed" "$infected" >"$match_foreign" || die_or_escalate "comm failed (foreign intersect)"
 # Pass 2: all installed packages -- also catches AUR packages shipped through a
 # binary repo (e.g. Chaotic-AUR on Garuda), which pass 1 misses.
-comm -12 "$all_installed" "$infected" >"$match_all"
+comm -12 "$all_installed" "$infected" >"$match_all" || die_or_escalate "comm failed (all intersect)"
 # Packages caught only by the broader pass (repo-provided AUR packages). Foreign
 # matches are a subset of all matches, so the lines unique to match_all are exactly
 # the repo-only hits.
-comm -13 "$match_foreign" "$match_all" >"$match_repo_only"
+comm -13 "$match_foreign" "$match_all" >"$match_repo_only" || die_or_escalate "comm failed (repo-only diff)"
 
-total=$(wc -l <"$match_all" | tr -d '[:space:]')
-foreign_n=$(wc -l <"$match_foreign" | tr -d '[:space:]')
-repo_n=$(wc -l <"$match_repo_only" | tr -d '[:space:]')
+total=$(wc -l <"$match_all" | tr -d '[:space:]') || die_or_escalate "wc failed (match_all)"
+foreign_n=$(wc -l <"$match_foreign" | tr -d '[:space:]') || die_or_escalate "wc failed (match_foreign)"
+repo_n=$(wc -l <"$match_repo_only" | tr -d '[:space:]') || die_or_escalate "wc failed (match_repo_only)"
 
 # --- Report ---
 # Clean only when neither the name check nor the IOC checks found anything.
@@ -279,11 +309,7 @@ fi
 # A high-confidence indicator outranks a name-only match: report it last (so it
 # is the final thing on screen) and exit 3.
 if [ "$ioc_found" -eq 1 ]; then
-    echo
-    echo "INDICATOR OF COMPROMISE reported above -- treat this as serious:"
-    echo "  - Investigate the flagged install scriptlet or ld.so.preload entry now."
-    echo "  - If confirmed, assume full compromise: back up data, reinstall clean,"
-    echo "    and rotate all credentials (SSH, GitHub, browser sessions, tokens)."
+    print_ioc_advisory
     exit 3
 fi
 exit 2
