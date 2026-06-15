@@ -9,9 +9,10 @@
 #
 # This script fetches the live list of compromised package names published on
 # the official Arch Linux HedgeDoc note and reports any that are installed on
-# the local system. It also runs two local, high-signal indicator-of-compromise
-# (IOC) checks. It is read-only: it only queries pacman, reads a few local files,
-# and fetches the public list -- it never modifies the system.
+# the local system. It also runs three local, high-signal indicator-of-compromise
+# (IOC) checks. It never modifies the system: it queries pacman, reads a few local
+# files, fetches the public list, and -- only if you opt in at the prompt -- runs a
+# read-only `sudo stat` on the BPF filesystem for the eBPF rootkit check.
 #
 # This is a portable shell port of the original fish version: it has no fish
 # dependency and runs under bash and the BusyBox ash shell used by Alpine. It
@@ -38,6 +39,14 @@
 #         catching the malware even under a renamed or not-yet-listed package.
 #      b. Flags a non-empty /etc/ld.so.preload, a classic library-injection /
 #         rootkit persistence mechanism that is absent on a clean Arch system.
+#      c. Looks for the eBPF rootkit's pinned maps under /sys/fs/bpf
+#         (hidden_pids / hidden_names / hidden_inodes), which the payload pins to
+#         hide processes, directory entries and socket inodes. /sys/fs/bpf is
+#         root-only (mode 0700) on a normal system, so this check is definitive
+#         only as root. When run unprivileged at an interactive terminal it
+#         offers an opt-in sudo re-check (which prompts for the sudo password and
+#         only runs read-only 'stat' on those paths); otherwise it reports
+#         INCOMPLETE rather than a misleading "clean".
 #
 # Usage:
 #   ./check_aur_infected.sh        # or: bash check_aur_infected.sh
@@ -47,7 +56,8 @@
 #   1  error -- fetch, format, or parse sanity check failed (and no indicator found)
 #   2  one or more listed package NAMES are installed (name-level match -- triage)
 #   3  a high-confidence indicator of compromise was found (install-scriptlet
-#      marker or non-empty /etc/ld.so.preload). Outranks 1 and 2.
+#      marker, non-empty /etc/ld.so.preload, or an eBPF rootkit map pinned under
+#      /sys/fs/bpf). Outranks 1 and 2.
 #
 # **Note:**
 # - Name matches (exit 2) are by package NAME only. A hit means a same-named
@@ -58,8 +68,13 @@
 #   almost certainly a benign name collision, not the compromised artifact.
 # - Indicator-of-compromise hits (exit 3) are far stronger evidence than a name
 #   match and warrant immediate investigation.
-# - Requires: curl, pacman, plus sed / grep / sort / comm / mktemp / wc / tr
-#   (all standard on Arch).
+# - The eBPF map check (IOC c) needs to read the root-only /sys/fs/bpf, so an
+#   unprivileged NON-interactive run (e.g. cron) can only ever report it as
+#   INCOMPLETE -- it yields no eBPF coverage. To cover IOC c in automation, run
+#   the script as root; interactively it instead offers an opt-in sudo re-check.
+# - Requires: curl, pacman, plus sed / grep / sort / comm / mktemp / wc / tr /
+#   stat (all standard on Arch). The optional eBPF re-check additionally uses
+#   sudo, but only when you opt in at the prompt.
 #
 # Sources:
 # - Original bash script (Kidev):
@@ -68,6 +83,8 @@
 #     https://gist.github.com/Kidev/85756c3dcad3623ca5604a8135bafd14?permalink_comment_id=6196490
 # - Data source, official Arch Linux HedgeDoc note:
 #     https://md.archlinux.org/s/SxbqukK6IA
+# - eBPF rootkit / pinned-map indicators of compromise:
+#     https://ioctl.fail/preliminary-analysis-of-aur-malware/#indicators-of-compromise
 # =================================================================
 
 set -o errexit -o nounset -o pipefail
@@ -86,6 +103,11 @@ DOC_MARKER='<div id="doc"'
 # supply-chain compromise; add future campaign markers as alternations, e.g.
 # 'atomic-lockfile|some-other-marker'.
 IOC_MARKERS='atomic-lockfile'
+# eBPF rootkit pinned-map paths to look for under the BPF filesystem. The 2026
+# AUR payload pins these maps to hide processes, directory entries and socket
+# inodes; a clean system has none. Space-separated (the paths contain no spaces),
+# iterated below. Add future pinned-object paths here as the campaign evolves.
+BPF_MAPS='/sys/fs/bpf/hidden_pids /sys/fs/bpf/hidden_names /sys/fs/bpf/hidden_inodes'
 # Tracks whether any indicator of compromise was found (raises the exit code to 3).
 ioc_found=0
 
@@ -96,7 +118,7 @@ export LC_ALL=C
 
 # --- Dependency check ---
 # Fail early with a clear message rather than midway through a pipeline.
-for cmd in curl pacman sed grep sort comm mktemp wc tr; do
+for cmd in curl pacman sed grep sort comm mktemp wc tr stat; do
     if ! command -v "$cmd" >/dev/null 2>&1; then
         echo "ERROR: required command '$cmd' not found in PATH." >&2
         exit 1
@@ -121,7 +143,8 @@ match_repo_only="$tmpdir/match_repo_only"
 print_ioc_advisory() {
     echo
     echo "INDICATOR OF COMPROMISE reported above -- treat this as serious:"
-    echo "  - Investigate the flagged install scriptlet or ld.so.preload entry now."
+    echo "  - Investigate the flagged install scriptlet, ld.so.preload entry, or"
+    echo "    pinned eBPF map now."
     echo "  - If confirmed, assume full compromise: back up data, reinstall clean,"
     echo "    and rotate all credentials (SSH, GitHub, browser sessions, tokens)."
 }
@@ -141,10 +164,26 @@ die_or_escalate() {
     escalate
 }
 
+# scan_bpf_maps: print each pinned rootkit map in $BPF_MAPS that currently exists,
+# one path per line. $1 is an optional command prefix -- empty for the plain
+# unprivileged probe, "sudo" for the opt-in elevated re-check -- so the same logic
+# serves both callers. `stat` only needs SEARCH permission on the parent dir (not
+# read on the map), which is why an unprivileged probe still works as root and the
+# sudo prefix lets a normal user reach the root-only /sys/fs/bpf. Output is
+# discarded; only the exit status matters.
+scan_bpf_maps() {
+    _prefix=$1
+    for _m in $BPF_MAPS; do
+        if $_prefix stat "$_m" >/dev/null 2>&1; then
+            printf '%s\n' "$_m"
+        fi
+    done
+}
+
 # --- Indicator-of-compromise checks (local, network-independent) ---
-# Run these first so they still report even if the list fetch below fails. Both
-# are high-signal and low-false-positive: a clean Arch system normally has
-# neither, so a hit is treated as far stronger evidence than a bare name match.
+# Run these first so they still report even if the list fetch below fails. All
+# three are high-signal and low-false-positive: a clean Arch system normally has
+# none of them, so a hit is treated as far stronger evidence than a bare name match.
 echo "Checking for indicators of compromise..."
 
 # IOC a: known payload markers in pacman install scriptlets. pacman keeps each
@@ -196,6 +235,79 @@ if [ -s /etc/ld.so.preload ]; then
 else
     echo "  /etc/ld.so.preload: clean"
 fi
+
+# IOC c: eBPF rootkit pinned maps under /sys/fs/bpf (see scan_bpf_maps above).
+# The probe is definitive only when it can search /sys/fs/bpf -- i.e. when this
+# script runs as root. Unprivileged, that directory is mode 0700 and the probe
+# returns nothing, so the result is "unknown" (NOT clean) until an opt-in sudo
+# re-check is run. Tri-state: hit / clean / unknown.
+bpf_hits=$(scan_bpf_maps "") || true
+if [ -n "$bpf_hits" ]; then
+    bpf_status=hit
+elif [ -d /sys/fs/bpf ] && [ ! -x /sys/fs/bpf ]; then
+    # bpffs exists but we cannot search it: the unprivileged probe is inconclusive.
+    bpf_status=unknown
+else
+    # Either we searched it and found nothing, or bpffs is not mounted at all.
+    bpf_status=clean
+fi
+
+# When the unprivileged probe was inconclusive, offer a password-prompting sudo
+# re-check -- but only at an interactive terminal and only if sudo is installed,
+# so non-interactive / cron use stays untouched. `sudo -v` validates credentials
+# once up front so a wrong password is told apart from a genuinely absent map
+# (both make `sudo stat` exit non-zero) and so the per-map stats do not re-prompt.
+if [ "$bpf_status" = unknown ] && [ -t 0 ] && command -v sudo >/dev/null 2>&1; then
+    # Prompt/preamble go to stderr (not stdout) so redirecting the report to a file
+    # still shows the question on the terminal; `read` takes the reply from stdin.
+    {
+        echo "  eBPF rootkit maps: /sys/fs/bpf is root-only -- cannot verify as this user."
+        echo "    This checks whether the rootkit has pinned any of its hiding maps:"
+        for _m in $BPF_MAPS; do echo "      $_m"; done
+        echo "    A sudo re-check needs root: sudo will prompt for your password and only"
+        echo "    runs read-only 'stat' on those paths -- it modifies nothing."
+        printf "    Run the sudo eBPF check now? [y/N] "
+    } >&2
+    read -r _ans || _ans=""
+    case $_ans in
+        y | Y | yes | Yes | YES)
+            if ! sudo -v; then
+                echo "    sudo authentication failed -- eBPF check not completed." >&2
+                # bpf_status stays "unknown"; reported as INCOMPLETE below.
+            elif ! sudo stat /sys/fs/bpf >/dev/null 2>&1; then
+                # Auth succeeded but `sudo stat` itself was denied (e.g. a command-
+                # restricted sudoers policy) or errored. An empty per-map result
+                # would then be indistinguishable from "maps absent", so it must NOT
+                # be reported as clean. Probing the root-only dir itself -- which
+                # needs search on the world-searchable /sys/fs, not on /sys/fs/bpf --
+                # confirms the re-check can actually read bpffs before we trust it.
+                echo "    sudo stat could not read /sys/fs/bpf -- eBPF check not completed." >&2
+                # bpf_status stays "unknown"; reported as INCOMPLETE below.
+            else
+                bpf_hits=$(scan_bpf_maps "sudo") || true
+                if [ -n "$bpf_hits" ]; then bpf_status=hit; else bpf_status=clean; fi
+            fi
+            ;;
+        *)
+            : # declined; bpf_status stays "unknown" -> INCOMPLETE below.
+            ;;
+    esac
+fi
+
+# Final IOC c verdict.
+case $bpf_status in
+    hit)
+        ioc_found=1
+        echo "  [IOC] eBPF rootkit pinned map(s) present:"
+        for _m in $bpf_hits; do echo "    - $_m"; done
+        ;;
+    clean)
+        echo "  eBPF rootkit maps: clean"
+        ;;
+    unknown)
+        echo "  eBPF rootkit maps: INCOMPLETE -- /sys/fs/bpf is root-only, re-run as root" >&2
+        ;;
+esac
 echo
 
 # --- Fetch the compromised-package list ---
