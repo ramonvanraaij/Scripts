@@ -7,6 +7,8 @@ Before proceeding with the upgrade, a full backup was performed using **Proxmox 
 
 The decision to perform an in-place upgrade of the operating system and the application (from v2.12.6 to v2.13.5), rather than a fresh install, was motivated by the fact that Nginx Proxy Manager (NPM) lacks a native import/export function for its configuration, hosts, and SSL certificates. Migrating data to a fresh instance manually would have been error-prone and time-consuming.
 
+> **Update (June 2026):** This log originally covered the v2.13.5 upgrade built on OpenResty 1.27.1.2 with a hand-compiled legacy PCRE. The companion script `upgrade_npm_trixie.sh` has since been updated to target **NPM v2.15.1** on **OpenResty 1.29.2.5**, built directly against the system PCRE2 (no legacy PCRE compilation), and to handle two NPM 2.15.x issues documented below as **Issue H** and **Issue I**. The original Issues A-G are retained as the troubleshooting log.
+
 ## Overview
 This document logs the specific errors, failed attempts, and final solutions encountered while upgrading the host from Debian 12 (Bookworm) to Debian 13 (Trixie) and updating NPM.
 
@@ -89,6 +91,8 @@ Since Debian Trixie does not provide `libpcre3-dev`, we must compile the legacy 
     ./configure --with-pcre=/tmp/pcre-8.45 --with-pcre-jit ...
     ```
 
+> **Update (June 2026):** This legacy-PCRE compilation is no longer necessary. Modern OpenResty (1.29.2.5 - the version the official `docker-nginx-full` image pins on Trixie, though the script builds it from openresty.org source) builds cleanly against the system `libpcre2-dev`: just omit the `--with-pcre=<source>` flag (keep `--with-pcre-jit`) and Nginx auto-detects PCRE2. The script now builds this way; the attempts above are kept as the original log.
+
 ---
 
 ### Issue C: Node.js Version Incompatibility
@@ -119,8 +123,10 @@ The git tags for NPM releases often contain a placeholder version (`2.0.0`) in `
 **Solution:**
 Manually patch `package.json` before building:
 ```bash
-sed -i 's/"version": "2.0.0"/"version": "2.13.5"/' package.json
+sed -i 's/"version": "2.0.0"/"version": "2.15.1"/' package.json
 ```
+
+> **Update (June 2026):** NPM 2.15.x dropped the root `package.json` and ships only `frontend/package.json` and `backend/package.json`. The script patches whichever of the three files exist, so a missing root file no longer aborts the run.
 
 ---
 
@@ -181,13 +187,70 @@ Update the logrotate configuration to use root.
 sed -i 's/su npm npm/su root root/g' /etc/logrotate.d/nginx-proxy-manager
 ```
 
+---
+
+## 2a. Additional Issues on the NPM 2.15.x Upgrade
+
+These surfaced when moving from v2.13.5 to **v2.15.1** and are specific to running NPM outside its Docker image (i.e. this community-script LXC).
+
+### Issue H: Certbot Plugin Version Pinning (`acme==undefined`)
+**Symptom:**
+After deploying 2.15.1, the backend crash-looped on startup:
+```text
+[Certbot] Installing cloudflare...
+ERROR: Invalid requirement: 'acme==undefined'
+Startup Error: Some plugins failed to install
+```
+**Cause:**
+NPM 2.15.x (`backend/lib/certbot.js`) pins the certbot plugin and `acme` versions from the `CERTBOT_VERSION` environment variable. The Docker image sets it; the community-script systemd unit does not, so the version interpolates to `undefined` and the pip install fails.
+
+**Solution:**
+Set `CERTBOT_VERSION` for the NPM service via a systemd drop-in, derived from the installed certbot:
+```bash
+CBVER=$(/opt/certbot/bin/certbot --version 2>&1 | awk '{print $2}')
+mkdir -p /etc/systemd/system/npm.service.d
+printf '[Service]\nEnvironment=CERTBOT_VERSION=%s\n' "$CBVER" \
+  > /etc/systemd/system/npm.service.d/certbot-version.conf
+systemctl daemon-reload
+```
+
+### Issue I: Missing `$x_forwarded_scheme` / `$x_forwarded_proto` Maps
+**Symptom:**
+After 2.15.x regenerated the proxy host configs, OpenResty reloads failed:
+```text
+nginx: [emerg] unknown "x_forwarded_scheme" variable
+```
+**Cause:**
+The 2.15.x `proxy.conf` sets `X-Forwarded-Scheme`/`X-Forwarded-Proto` from `$x_forwarded_scheme` / `$x_forwarded_proto`. The `map` blocks that define those variables ship in the Docker image's `nginx.conf`, which this install does not use.
+
+**Solution:**
+Define the maps at http context via a `conf.d` drop-in. nginx.conf loads them through `include /etc/nginx/conf.d/*.conf;`, which (via the `/etc/nginx` symlink) resolves to `/usr/local/openresty/nginx/conf.d`:
+```bash
+cat > /usr/local/openresty/nginx/conf.d/x-forwarded-maps.conf <<'EOF'
+map $http_x_forwarded_proto $x_forwarded_proto {
+    "http"  "http";
+    "https" "https";
+    default $scheme;
+}
+map $http_x_forwarded_scheme $x_forwarded_scheme {
+    "http"  "http";
+    "https" "https";
+    default $scheme;
+}
+EOF
+```
+
+---
+
 ## 3. Automation
 A script `upgrade_npm_trixie.sh` has been created in this directory. It automates:
 1.  OS Upgrade prompts (supports both classic `sources.list` and DEB822 format).
 2.  Certbot virtual environment recreation (Python 3.13 fix).
-3.  OpenResty + Legacy PCRE compilation.
+3.  OpenResty 1.29.2.5 compilation against the system PCRE2 (no legacy PCRE).
 4.  Node.js upgrade and cleanup.
-5.  NPM patching and deployment (including missing Nginx configs).
-6.  Nginx service conflicts (killing rogue processes).
+5.  NPM v2.15.1 patching and deployment (including the Nginx include files).
+6.  `CERTBOT_VERSION` systemd drop-in for the NPM service (Issue H).
+7.  `$x_forwarded_scheme` / `$x_forwarded_proto` nginx maps (Issue I).
+8.  Nginx service conflicts (killing rogue processes).
 
 **Note:** The logrotate fix (Issue G) is not included in the script and must be applied manually if needed.

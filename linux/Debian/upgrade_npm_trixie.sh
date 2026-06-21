@@ -19,13 +19,15 @@
 # It performs the following actions:
 # 1. Checks for root privileges.
 # 2. Optionally upgrades Debian from Bookworm to Trixie.
-# 3. Installs build dependencies for OpenResty and PCRE.
+# 3. Installs build dependencies for OpenResty (system PCRE2).
 # 4. Recreates the Certbot Python virtual environment (Python 3.13 fix).
-# 5. Compiles OpenResty 1.27.1.2 with legacy PCRE 1 support.
+# 5. Compiles OpenResty 1.29.2.5 against the system PCRE2 library.
 # 6. Upgrades Node.js to the system version (v20+).
-# 7. Downloads, patches, and deploys the latest NPM source code.
-# 8. Fixes Nginx service conflicts (killing rogue processes).
-# 9. Restarts services and verifies status.
+# 7. Downloads, patches, and deploys the NPM source code (v2.15.1).
+# 8. Sets CERTBOT_VERSION for the NPM service (2.15.x plugin pinning fix).
+# 9. Adds the $x_forwarded_scheme / $x_forwarded_proto nginx maps (2.15.x).
+# 10. Fixes Nginx service conflicts (killing rogue processes).
+# 11. Restarts services and verifies status.
 #
 # Usage:
 #   chmod +x upgrade_npm_trixie.sh
@@ -39,11 +41,13 @@
 set -o errexit -o nounset -o pipefail
 
 # --- Configuration ---
-readonly OPENRESTY_VERSION="1.27.1.2"
-readonly PCRE_VERSION="8.45"
-readonly NPM_TAG="v2.13.5"
+readonly OPENRESTY_VERSION="1.29.2.5"
+readonly NPM_TAG="v2.15.1"
 readonly APP_DIR="/app"
-readonly BACKUP_DIR="/app_backup_$(date +%Y%m%d_%H%M%S)"
+# Declare then assign separately so the command substitution's exit status is not
+# masked by 'readonly' (shellcheck SC2155).
+BACKUP_DIR="/app_backup_$(date +%Y%m%d_%H%M%S)"
+readonly BACKUP_DIR
 # --- End Configuration ---
 
 # --- Functions ---
@@ -79,6 +83,7 @@ upgrade_debian() {
             apt-get update
             apt-get full-upgrade -y
             log "Upgrade complete. A reboot is highly recommended."
+            log "Note: rebooting now exits this script; re-run it after the reboot to continue."
             printf "Reboot now? (y/n): "
             read -r reply
             if [ "$reply" = "y" ] || [ "$reply" = "Y" ]; then
@@ -116,22 +121,20 @@ compile_openresty() {
     # Ensure ldconfig path for LuaJIT
     export PATH="$PATH:/sbin:/usr/sbin"
 
+    local WORK_DIR
     WORK_DIR=$(mktemp -d)
     trap 'rm -rf "${WORK_DIR}"' RETURN
     cd "${WORK_DIR}"
-
-    log "Fetching PCRE ${PCRE_VERSION} source..."
-    wget -q "https://sourceforge.net/projects/pcre/files/pcre/${PCRE_VERSION}/pcre-${PCRE_VERSION}.tar.gz"
-    tar -xzf "pcre-${PCRE_VERSION}.tar.gz"
 
     log "Fetching OpenResty source..."
     wget -q "https://openresty.org/download/openresty-${OPENRESTY_VERSION}.tar.gz"
     tar -xzf "openresty-${OPENRESTY_VERSION}.tar.gz"
     cd "openresty-${OPENRESTY_VERSION}"
 
-    log "Configuring OpenResty with static PCRE..."
+    # Trixie ships PCRE2 (libpcre2-dev). Modern Nginx/OpenResty auto-detects it,
+    # so no legacy PCRE source build or --with-pcre=<path> is needed anymore.
+    log "Configuring OpenResty against system PCRE2..."
     ./configure \
-        --with-pcre="${WORK_DIR}/pcre-${PCRE_VERSION}" \
         --with-pcre-jit \
         --with-http_ssl_module \
         --with-http_stub_status_module \
@@ -165,6 +168,7 @@ deploy_npm() {
     log "Backing up installation to ${BACKUP_DIR}..."
     cp -ra "${APP_DIR}" "${BACKUP_DIR}"
 
+    local WORK_DIR
     WORK_DIR=$(mktemp -d)
     trap 'rm -rf "${WORK_DIR}"' RETURN
     cd "${WORK_DIR}"
@@ -174,10 +178,13 @@ deploy_npm() {
     tar -xzf npm.tar.gz
     cd "nginx-proxy-manager-${NPM_TAG#v}"
 
+    # NPM 2.15.x dropped the root package.json and ships only frontend/backend ones,
+    # so patch whichever placeholder files actually exist (a missing file would abort
+    # the script under 'set -o errexit').
     log "Patching version numbers..."
-    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"/" package.json
-    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"/" frontend/package.json
-    sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"/" backend/package.json
+    for pj in package.json frontend/package.json backend/package.json; do
+        [ -f "${pj}" ] && sed -i "s/\"version\": \"2.0.0\"/\"version\": \"${NPM_TAG#v}\"/" "${pj}"
+    done
 
     log "Building Frontend..."
     (cd frontend && npm install && npm run locale-compile && npm run build)
@@ -186,10 +193,10 @@ deploy_npm() {
     systemctl stop npm || true
     cp "${APP_DIR}/config/production.json" "${WORK_DIR}/production.json.bak"
     find "${APP_DIR}" -mindepth 1 ! -regex "^${APP_DIR}/config\(/.*\)?$" -delete
-    cp -r backend/* "${APP_DIR}/"
+    cp -a backend/. "${APP_DIR}/"
     mv "${WORK_DIR}/production.json.bak" "${APP_DIR}/config/production.json"
     mkdir -p "${APP_DIR}/frontend"
-    cp -r frontend/dist/* "${APP_DIR}/frontend/"
+    cp -a frontend/dist/. "${APP_DIR}/frontend/"
 
     log "Deploying default Nginx configuration..."
     mkdir -p /usr/local/openresty/nginx/conf/conf.d
@@ -198,6 +205,54 @@ deploy_npm() {
     log "Installing Backend Dependencies..."
     cd "${APP_DIR}"
     npm install --production
+}
+
+set_certbot_version_env() {
+    # NPM 2.15.x (lib/certbot.js) pins the certbot plugin / acme versions from the
+    # $CERTBOT_VERSION env var. The Docker image sets it; this non-Docker install does
+    # not, so plugin install builds 'acme==undefined', fails, and the backend
+    # crash-loops on startup. Set it from the installed certbot via a systemd drop-in.
+    log "Setting CERTBOT_VERSION for the NPM service (NPM 2.15.x)..."
+    local cbver
+    # certbot prints "certbot X.Y.Z"; match that exact line (and exit) so a stray
+    # warning/deprecation line folded in by 2>&1 cannot produce a multi-line value.
+    # Assign inside the 'if' so a failed certbot run gives our message rather than an
+    # opaque 'set -e' abort on the command substitution.
+    if ! cbver=$(/opt/certbot/bin/certbot --version 2>&1 | awk '/^certbot /{print $2; exit}'); then
+        error "Failed to run /opt/certbot/bin/certbot to determine its version."
+    fi
+    if ! printf '%s' "${cbver}" | grep -qE '^[0-9]+\.[0-9]+(\.[0-9]+)?$'; then
+        error "Could not determine certbot version (got: '${cbver}')."
+    fi
+    mkdir -p /etc/systemd/system/npm.service.d
+    cat > /etc/systemd/system/npm.service.d/certbot-version.conf <<EOF
+[Service]
+Environment=CERTBOT_VERSION=${cbver}
+EOF
+    systemctl daemon-reload
+}
+
+add_forwarded_maps() {
+    # NPM 2.15.x vhost templates reference $x_forwarded_scheme / $x_forwarded_proto.
+    # Their 'map' definitions ship in the Docker image's nginx.conf, which this install
+    # does not use, so reloads fail with 'unknown "x_forwarded_scheme" variable'. Define
+    # them at http context via a conf.d drop-in loaded by 'include /etc/nginx/conf.d/*.conf;'
+    # (i.e. /usr/local/openresty/nginx/conf.d, reached through the /etc/nginx symlink).
+    log "Adding X-Forwarded-* nginx maps (NPM 2.15.x)..."
+    local confd="/usr/local/openresty/nginx/conf.d"
+    mkdir -p "${confd}"
+    cat > "${confd}/x-forwarded-maps.conf" <<'MAPEOF'
+map $http_x_forwarded_proto $x_forwarded_proto {
+    "http"  "http";
+    "https" "https";
+    default $scheme;
+}
+map $http_x_forwarded_scheme $x_forwarded_scheme {
+    "http"  "http";
+    "https" "https";
+    default $scheme;
+}
+MAPEOF
 }
 
 fix_nginx_service() {
@@ -210,6 +265,8 @@ fix_nginx_service() {
         sleep 2
     fi
 
+    log "Validating OpenResty configuration..."
+    /usr/local/openresty/nginx/sbin/nginx -t
     log "Restarting OpenResty service..."
     systemctl restart openresty
 }
@@ -222,6 +279,8 @@ main() {
     compile_openresty
     upgrade_nodejs
     deploy_npm
+    set_certbot_version_env
+    add_forwarded_maps
     fix_nginx_service
     
     log "Restarting Backend Service..."
