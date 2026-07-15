@@ -1,19 +1,29 @@
-# My Personal Scripts Collection
+# 🧰 Scripts: Personal Linux Sysadmin & Automation Collection
 
-This repository is a curated collection of personal scripts designed for various system administration and automation tasks. The scripts are primarily written in Bash and Python, focusing on Linux environments.
+[![Bash](https://img.shields.io/badge/Bash-BusyBox--safe-4EAA25?logo=gnubash&logoColor=white&style=flat-square)](https://www.gnu.org/software/bash/)
+[![Python](https://img.shields.io/badge/Python-3-3776AB?logo=python&logoColor=white&style=flat-square)](https://www.python.org)
+[![Platform](https://img.shields.io/badge/Platform-Linux-FCC624?logo=linux&logoColor=black&style=flat-square)](https://kernel.org)
+[![License](https://img.shields.io/badge/License-BSD--3--Clause-blue?style=flat-square)](LICENSE.md)
+
+This repository is a curated collection of personal scripts designed for various system administration and automation tasks. The scripts are primarily written in **Bash** and **Python**, focusing on **Linux** environments.
 
 **Please note:** This is a personal project and a work in progress. Not all scripts are actively maintained, and some of my scripts may not be included here yet.
 
-## Features
+---
+
+## 🚀 Overview
 
 The scripts are designed to be modular and configurable, with clear instructions for usage and automation. They often include features like:
 
-*   **Automated Updates:** Scripts for updating system packages and applications.
-*   **Backups:** Scripts for backing up websites, databases, and configuration files.
-*   **Security:** Scripts for managing firewall rules and trusted proxies.
-*   **Utility:** Various helper scripts for tasks like DNS lookups and file synchronization.
+### ✨ Key Features
+*   **🔄 Automated Updates:** Scripts for updating system packages and applications.
+*   **💾 Backups:** Scripts for backing up websites, databases, and configuration files.
+*   **🛡️ Security:** Scripts for managing firewall rules and trusted proxies.
+*   **🧰 Utility:** Various helper scripts for tasks like DNS lookups and file synchronization.
 
-## Dependencies
+---
+
+## 📋 Dependencies
 
 Many scripts in this repository rely on common command-line tools. Please ensure the following are installed on your system:
 
@@ -22,7 +32,9 @@ Many scripts in this repository rely on common command-line tools. Please ensure
 *   `rsync`: For file synchronization.
 *   `git`: For version control.
 
-## Secrets Management
+---
+
+## 🔐 Secrets Management
 
 **Important:** Never store sensitive information, such as API keys or passwords, directly in your scripts.
 
@@ -47,7 +59,9 @@ Then, source the file before running your script:
 source cloudflare.env && ./linux/cloudflare/cloudflare-cache-purge.sh
 ```
 
-## Directory Structure
+---
+
+## 📂 Directory Structure
 
 The repository is organized as follows:
 
@@ -56,10 +70,12 @@ The repository is organized as follows:
     *   `Distrobox/`, `iSH/`, `nginx/`, `QNAP/`, `Proxmox/`, `Proxmox Mail Gateway/`: Application-specific scripts.
     *   `backup_wordpress.sh`, `backup-to-git.py`: General-purpose backup scripts.
 *   `.gitignore`: Excludes common temporary files, packages, and logs.
-*   `LICENSE.md`: The BSD 3-Clause License for the repository.
+*   [`LICENSE.md`](LICENSE.md): The BSD 3-Clause License for the repository.
 *   `README.md`: A brief introduction to the script collection.
 
-## Key Scripts
+---
+
+## ⭐ Key Scripts
 
 Here are a few key scripts in this collection:
 
@@ -85,7 +101,9 @@ Here are a few key scripts in this collection:
 *   **`linux/Debian/TrueNAS_SCALE/update_sd_grub.sh`**: Automates updating the Legacy GRUB bootloader on an internal SD card for TrueNAS SCALE (HP MicroServer Gen8 workaround).
 *   **`linux/QNAP/qnap_realtime_sync.sh`**: A real-time sync daemon for QNAP NAS that monitors directories with `inotifywait` and synchronizes changes to a TrueNAS rsync target, with debouncing, automatic retries, a circuit breaker, log rotation, and SMTP failure alerts.
 
-## Getting Started
+---
+
+## ⚡ Getting Started
 
 To use any of these scripts, you can clone this repository and then execute the desired script. Most scripts include a documentation header explaining their specific usage, configuration, and any dependencies.
 
@@ -98,7 +116,9 @@ chmod +x linux/Arch\ Linux/system-update.sh
 
 Please read the comments at the beginning of each script for detailed instructions.
 
-## Development Conventions
+---
+
+## 🛠️ Development Conventions
 
 *   **Shell Scripts:** Scripts are written in Bash and are designed to be POSIX-compliant where possible. They use `set -o errexit -o nounset -o pipefail` for robustness. All scripts must be compatible with the strict Alpine Linux BusyBox shell.
 *   **Python Scripts:** Scripts are written in Python 3 and use standard libraries where possible.
@@ -114,20 +134,45 @@ Please read the comments at the beginning of each script for detailed instructio
     *   **Function comments:** Add a comment above each function explaining its purpose and parameters.
     *   **In-line comments:** Use in-line comments to explain complex or non-obvious lines of code.
 
-## Troubleshooting
+---
+
+## 🔍 Troubleshooting
 
 *   **Script execution errors:** Ensure that the scripts in `~/.local/bin` are executable (`chmod +x <script>`).
 *   **Missing dependencies:** If a script fails due to a missing command, please install the required dependency using your system's package manager.
 *   **Backup script failures:** If a backup script fails, check the script's log output for any error messages from the underlying tools (e.g., `rsync`, `mysqldump`).
 
-## Disclaimer
+---
+
+## ⚠️ Disclaimer
 
 These scripts are provided "as is" without warranty of any kind, express or implied. The author is not liable for any damages arising from the use of these scripts.
 
-## License
+---
 
-This project is licensed under the BSD 3-Clause License - see the [LICENSE.md](LICENSE.md) file for details.
+## 📜 License
 
-## Copyright
+Copyright (c) 2024-2026 Rámon van Raaij.
 
-Copyright (c) 2024-2026 Rámon van Raaij
+This project is licensed under the BSD 3-Clause License - see the [`LICENSE.md`](LICENSE.md) file for details.
+
+---
+
+## 🤝 Credits & Maintenance
+
+Developed and maintained by **[Rámon van Raaij](https://ramon.vanraaij.eu)** (2024-2026).
+
+*   **🦋 Bluesky:** [@ramonvanraaij.nl](https://bsky.app/profile/ramonvanraaij.nl)
+*   **🐙 GitHub:** [@ramonvanraaij](https://github.com/ramonvanraaij)
+*   **🌐 Website:** [ramon.vanraaij.eu](https://ramon.vanraaij.eu)
+
+---
+
+## ☕ Buy me a Coffee
+
+If you found this project helpful, informative, or if it saved you some time, consider supporting my work! Your support motivates me to keep building and sharing.
+
+*   **💳 [Bunq.me](https://bunq.me/ramonvanraaij)** (iDeal, Bancontact, Cards)
+*   **🅿️ [PayPal](http://paypal.me/ramonvanraaij)**
+
+Thank you for your support! ❤️
