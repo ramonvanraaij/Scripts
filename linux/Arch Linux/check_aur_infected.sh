@@ -85,6 +85,10 @@
 #     https://md.archlinux.org/s/SxbqukK6IA
 # - eBPF rootkit / pinned-map indicators of compromise:
 #     https://ioctl.fail/preliminary-analysis-of-aur-malware/#indicators-of-compromise
+# - aur-general mailing list thread tracking the compromise as it unfolded
+#   across multiple waves (source of the atomic-lockfile / js-digest /
+#   lockfile-js / nextfile-js payload markers above):
+#     https://lists.archlinux.org/archives/list/aur-general@lists.archlinux.org/thread/FGXPCB3ZVCJIV7FX323SBAX2JHYB7ZS4/
 # =================================================================
 
 set -o errexit -o nounset -o pipefail
@@ -98,11 +102,17 @@ MIN_EXPECTED=100
 # Marker that identifies the HedgeDoc note body; also where extraction starts.
 DOC_MARKER='<div id="doc"'
 # Known payload markers to hunt for inside pacman install scriptlets, as an
-# extended regular expression (ERE). 'atomic-lockfile' is the malicious npm
-# package referenced by affected AUR builds' install hooks in the 2026 AUR
-# supply-chain compromise; add future campaign markers as alternations, e.g.
-# 'atomic-lockfile|some-other-marker'.
-IOC_MARKERS='atomic-lockfile'
+# extended regular expression (ERE). The 2026 AUR supply-chain compromise ran
+# in several waves, each pulling in a differently-named malicious package via
+# a different tool: 'atomic-lockfile' (npm, first wave), then 'js-digest'
+# (npm/bun, second wave -- republished on npm as 'lockfile-js' once the
+# original name was taken down), then 'nextfile-js' (bun, third wave). A
+# later variant of the third wave obfuscated the payload with ANSI-C-quoted,
+# character-by-character string concatenation specifically to dodge
+# literal-string grepping like this one, so this marker list cannot catch
+# that obfuscated form -- only unobfuscated occurrences of these names. Add
+# future campaign markers as alternations, e.g. 'existing-markers|new-marker'.
+IOC_MARKERS='atomic-lockfile|js-digest|lockfile-js|nextfile-js'
 # eBPF rootkit pinned-map paths to look for under the BPF filesystem. The 2026
 # AUR payload pins these maps to hide processes, directory entries and socket
 # inodes; a clean system has none. Space-separated (the paths contain no spaces),
