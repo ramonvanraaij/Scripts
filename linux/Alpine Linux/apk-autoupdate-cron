@@ -1,32 +1,670 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # apk-autoupdate-cron
 # =================================================================
-# Alpine Linux Automatic Update Cronjob and Logger
-# Copyright (c) 2025 Rámon van Raaij
-# License: BSD-3-Clause
-# Author: Rámon van Raaij | X: @ramonvanraaij | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
-# =================================================================
-# This script performs the following actions:
-# 1. Runs Alpine Linux's 'apk-autoupdate' tool to check for available updates, installs them and restarts affected services.
-# 2. Prefixes each output line with a timestamp.
-# 3. Logs all output to "/var/log/apk-autoupdate-cron.log".
+# Alpine Linux Automatic Update Cronjob with Failure Email Alert
 #
-# This script is intended to be run as a daily cron job.
-# Installation:
+# Copyright (c) 2025-2026 Rámon van Raaij
+# License: BSD-3-Clause
+# Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+#
+# This script runs Alpine's 'apk-autoupdate' tool as a daily cron job. Every
+# line of its output is prefixed with a timestamp and appended to a log file.
+# The exit code of the update is captured, so a failing update is reported
+# instead of passing unnoticed. A single email alert is sent when (and only
+# when) the update fails.
+#
+# It performs the following actions:
+# 1. Reads its configuration from the environment and, optionally, from a
+#    root-owned configuration file.
+# 2. Temporarily raises the monit system load alert levels (optional).
+# 3. Logs a start line and runs the update command, timestamping every output
+#    line and capturing the output of this run for the failure report.
+# 4. Restores the default monit configuration, also when the update fails.
+# 5. Sends one email alert when the update exits with a non-zero code.
+# 6. Removes its temporary files and exits with the exit code of the update.
+#
+# Usage:
 # 1. Place this script in "/etc/periodic/daily/".
 # 2. Make it executable: chmod 700 /etc/periodic/daily/apk-autoupdate-cron
+# 3. Optionally install a configuration file as
+#    "/etc/apk-autoupdate-cron.conf" (see example_apk-autoupdate-cron.conf).
+# 4. Verify the mail path: /etc/periodic/daily/apk-autoupdate-cron --test-email
 #
-# About apk-autoupdate: Alpine's tool for automatic updates.
-# Package: https://pkgs.alpinelinux.org/package/edge/testing/x86/apk-autoupdate
-# GitHub Repository: https://github.com/jirutka/apk-autoupdate/
+# **Note:**
+# A successful run never sends an email. The exit code of this script is the
+# exit code of the update, so cron and any monitoring tool report the
+# failure as well.
 # =================================================================
 
-# Function to run apk-autoupdate and prefix each line with a timestamp
-run_and_log() {
-  apk-autoupdate 2>&1 | while IFS= read -r line; do
-    printf "[%s] %s\n" "$(date '+%a %b %d %H:%M:%S %Z %Y')" "$line"
-  done
+# --- Script Configuration ---
+# Exit on error, treat unset variables as an error and fail on piped errors.
+set -o errexit -o nounset -o pipefail
+
+# --- Configuration ---
+# Every variable below can be set in the environment. The configuration file
+# (APK_AUTOUPDATE_CRON_CONF) is sourced afterwards and may override them.
+LOG_FILE="${LOG_FILE:-/var/log/apk-autoupdate.log}"
+UPDATE_CMD="${UPDATE_CMD:-apk-autoupdate}"
+EMAIL_ENABLED="${EMAIL_ENABLED:-true}"
+EMAIL_TO="${EMAIL_TO:-admin@example.com}"
+EMAIL_FROM="${EMAIL_FROM:-apk-autoupdate@example.com}"
+SENDMAIL_CMD="${SENDMAIL_CMD:-/usr/sbin/sendmail}"
+LOG_TAIL_LINES="${LOG_TAIL_LINES:-40}"
+MONIT_ACTIVE_CONF="${MONIT_ACTIVE_CONF:-/etc/monit.d/system.conf}"
+MONIT_UPDATE_CONF="${MONIT_UPDATE_CONF:-/etc/monit.d/system.conf.update}"
+MONIT_DEFAULT_CONF="${MONIT_DEFAULT_CONF:-/etc/monit.d/system.conf.default}"
+APK_AUTOUPDATE_CRON_CONF="${APK_AUTOUPDATE_CRON_CONF:-/etc/apk-autoupdate-cron.conf}"
+
+# The variables above, without APK_AUTOUPDATE_CRON_CONF itself, are the ones
+# the configuration file may set. The list is used to read the file and to
+# apply the settings that it holds.
+CONF_VARIABLE_NAMES=(
+    LOG_FILE
+    UPDATE_CMD
+    EMAIL_ENABLED
+    EMAIL_TO
+    EMAIL_FROM
+    SENDMAIL_CMD
+    LOG_TAIL_LINES
+    MONIT_ACTIVE_CONF
+    MONIT_UPDATE_CONF
+    MONIT_DEFAULT_CONF
+)
+
+# --- Runtime State ---
+TEMP_OUTPUT_FILE=""      # Holds the output of the current run.
+CONF_RESULT_FILE=""      # Holds the result of reading the configuration file.
+UPDATE_EXIT=0            # Exit code of the update command.
+MONIT_RAISED=0           # Set while the raised monit configuration is active.
+LOG_WRITE_FAILED=0       # Set when the last log write failed.
+
+# --- Logging ---
+
+# Appends a timestamped message to the log file.
+# Parameters: $1 = message to log.
+# Sets LOG_WRITE_FAILED when the message could not be written. A failing log
+# file never aborts the script: the message goes to stderr instead, because a
+# broken log must not silence the failure alert.
+log_line() {
+    local message="$1" stamped
+    LOG_WRITE_FAILED=0
+    stamped="$(printf "[%s] %s" "$(date '+%a %b %d %H:%M:%S %Z %Y')" "${message}")"
+    if ! printf "%s\n" "${stamped}" 2>/dev/null >> "${LOG_FILE}"; then
+        LOG_WRITE_FAILED=1
+        printf "%s\n" "${stamped}" >&2
+    fi
+    return 0
 }
 
-# Run the function and redirect all its output to the log file
-run_and_log >> /var/log/apk-autoupdate.log
+# Appends a timestamped message to the log file and mirrors it to stderr.
+# Parameters: $1 = message to log.
+# The flag is per call, so a message is only skipped on stderr when its own
+# log write failed.
+log_error() {
+    local message="$1"
+    log_line "${message}"
+    if [ "${LOG_WRITE_FAILED}" -eq 0 ]; then
+        printf "[%s] %s\n" "$(date '+%a %b %d %H:%M:%S %Z %Y')" "${message}" >&2
+    fi
+    return 0
+}
+
+# --- Helpers ---
+
+# Returns the fully qualified host name, falling back to the short host name.
+# Parameters: none. Returns: the host name on stdout.
+get_hostname() {
+    local host=""
+    host="$(hostname -f 2>/dev/null || true)"
+    if [ -z "${host}" ]; then
+        host="$(hostname 2>/dev/null || true)"
+    fi
+    if [ -z "${host}" ]; then
+        host="unknown-host"
+    fi
+    printf "%s\n" "${host}"
+}
+
+# Checks whether an octal permission string allows writes for group or others.
+# Parameters: $1 = octal mode as printed by "stat -c '%a'" (for example 644).
+# Returns: 0 when the mode is group- or world-writable or cannot be judged,
+#          1 when the mode is safe.
+# The mode is printed without leading zeros ("stat" reports 0022 as 22), so it
+# is padded to three digits before it is split into its digits.
+is_group_or_world_writable() {
+    local mode="$1" digits group others
+    # A mode that is not a plain octal number cannot be judged: the file is
+    # treated as unsafe.
+    case "${mode}" in
+        ""|*[!0-7]*) return 0 ;;
+    esac
+    digits="${mode}"
+    # Pad the mode to three digits (22 -> 022).
+    while [ "${#digits}" -lt 3 ]; do
+        digits="0${digits}"
+    done
+    # Reduce the mode to its three least significant digits (04755 -> 755).
+    while [ "${#digits}" -gt 3 ]; do
+        digits="${digits#?}"
+    done
+    group="${digits:1:1}"
+    others="${digits:2:1}"
+    # A group or other digit of 2, 3, 6 or 7 contains the write bit.
+    case "${group}" in
+        2|3|6|7) return 0 ;;
+    esac
+    case "${others}" in
+        2|3|6|7) return 0 ;;
+    esac
+    return 1
+}
+
+# Copies a configuration file over another one.
+# Parameters: $1 = source file, $2 = destination file.
+# The destination is written in place, so it keeps its owner, its mode and, if
+# it is a symbolic link, its target.
+install_config() {
+    local source="$1" destination="$2"
+    if ! cat "${source}" 2>/dev/null > "${destination}"; then
+        return 1
+    fi
+    return 0
+}
+
+# --- Configuration File ---
+
+# Checks whether a name is one of the variables the configuration file may set.
+# Parameters: $1 = variable name.
+# Returns: 0 when the name is a known configuration variable, 1 otherwise.
+is_conf_variable() {
+    local candidate="$1" known
+    for known in "${CONF_VARIABLE_NAMES[@]}"; do
+        if [ "${known}" = "${candidate}" ]; then
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Sources the configuration file when it exists and is safe to read.
+# Parameters: none. Uses the path from APK_AUTOUPDATE_CRON_CONF.
+# The file is only used when it is a regular file owned by uid 0 that is
+# neither group- nor world-writable; anything else is ignored with a warning.
+# The file is read exactly once, in a subshell, so a file that aborts the
+# shell (an unset variable) or that ends it (an "exit") cannot stop this
+# script. The settings of the file are applied in this shell afterwards, so a
+# file whose last command fails still contributes its settings.
+load_config_file() {
+    local conf_file="${APK_AUTOUPDATE_CRON_CONF}"
+    if [ ! -e "${conf_file}" ]; then
+        return 0
+    fi
+    if [ ! -f "${conf_file}" ]; then
+        log_error "WARNING: configuration path ${conf_file} is not a regular file; ignoring it."
+        return 0
+    fi
+    local stat_output owner mode
+    stat_output="$(stat -c '%u %a' "${conf_file}" 2>/dev/null || true)"
+    if [ -z "${stat_output}" ]; then
+        log_error "WARNING: could not read the owner and the mode of ${conf_file}; ignoring it."
+        return 0
+    fi
+    owner="${stat_output%% *}"
+    mode="${stat_output##* }"
+    if [ "${owner}" != "0" ]; then
+        log_error "WARNING: configuration file ${conf_file} is not owned by uid 0; ignoring it."
+        return 0
+    fi
+    if is_group_or_world_writable "${mode}"; then
+        log_error "WARNING: configuration file ${conf_file} is group- or world-writable (mode ${mode}); ignoring it."
+        return 0
+    fi
+    # A file with a syntax error is never executed. The check runs with the
+    # bash that runs this script, so it does not depend on the PATH.
+    if ! "${BASH}" -n "${conf_file}" >/dev/null 2>&1; then
+        log_error "WARNING: could not read the configuration file ${conf_file}: it has a syntax error; ignoring it and continuing with the current settings."
+        return 0
+    fi
+    # The file is read once, in a subshell. The result of the read is written
+    # to a temporary file as NUL-separated pairs on fd 3 and collected here:
+    # first "__CONF_STATUS__" and the exit status of the file, then one pair
+    # per known variable that the file set. No line of the file is ever
+    # evaluated, so a configuration file cannot inject commands into this
+    # script: the names that are applied come from this script's own list, and
+    # the values are applied byte for byte with "printf -v", never with "eval".
+    # Errexit is off, so a file whose last command fails does not abort the
+    # read, and nounset is on, so a file that refers to an unset variable
+    # aborts the subshell and not this script. The redirections of the
+    # subshell are permanent, so bash keeps no saved copy of a pipe: a
+    # background job that the file starts - even a compound one such as
+    # "( ... ) &", "{ ...; } &" or "f &" - cannot hold the result channel
+    # open, and the parent only waits for the subshell itself. The subshell
+    # unsets "conf_result" and "CONF_RESULT_FILE" right after its
+    # "exec": that stops an accidental write, but bash still keeps a saved copy
+    # of fd 3 on a high descriptor (fd 10) that the sourced file can write to,
+    # and the glob "${TMPDIR}/apk-autoupdate-cron-conf.*" finds the file. A
+    # configuration file that forges the result can therefore only set known
+    # names to literal values, applied byte for byte with "printf -v": nothing
+    # in the result file is evaluated while it is read and applied. The
+    # configuration file itself is sourced and may set UPDATE_CMD, which this
+    # script evaluates by design, so a forged UPDATE_CMD pair gives it nothing
+    # it could not set directly. If the temporary file cannot be created, the
+    # same subshell body runs under a process substitution whose stdout
+    # carries the pairs, and a compound background job in the configuration
+    # file can then delay this run.
+    local conf_result="" conf_status="" conf_name="" conf_value=""
+    local -a conf_applied_names=() conf_applied_values=()
+    conf_result="$(mktemp "${TMPDIR:-/tmp}/apk-autoupdate-cron-conf.XXXXXX" 2>/dev/null || true)"
+    if [ -n "${conf_result}" ]; then
+        CONF_RESULT_FILE="${conf_result}"
+        (
+            exec 3>"${conf_result}" >/dev/null 2>&1 </dev/null
+            unset conf_result CONF_RESULT_FILE
+            set +o errexit
+            set -o nounset
+            # shellcheck source=/dev/null
+            . "${conf_file}" 3>&-
+            conf_status=$?
+            printf '%s\0%s\0' __CONF_STATUS__ "${conf_status}" >&3
+            for conf_name in "${CONF_VARIABLE_NAMES[@]}"; do
+                # A variable that the file unset keeps the value it had before
+                # the file was read, which may come from the environment.
+                if [[ -v ${conf_name} ]]; then
+                    printf '%s\0%s\0' "${conf_name}" "${!conf_name}" >&3
+                fi
+            done
+        ) || true
+        # Read the NUL-separated pairs from the temp file and remove it as
+        # soon as it has been read. The file is read only when the path is a
+        # regular file (after following symlinks): a missing file or a
+        # directory means "no result", so the "did not finish" warning is
+        # logged, nothing is applied and there is no stderr noise. A
+        # directory left in its place is removed only when it is empty; a
+        # non-empty one is left behind on purpose, because "rm -rf" on a path
+        # a hostile configuration file controls is worse than a stray
+        # directory. A file deleted between the test and the open cannot
+        # abort the run here because of "|| true", and a real read error
+        # still reaches stderr because there is no "2>/dev/null". A
+        # configuration file whose background job swaps a FIFO in between the
+        # test and the open can still make the open block: plain bash cannot
+        # open a file read-only without blocking on a FIFO, and opening it
+        # read-write only moves the block to the read. Such a configuration
+        # file could hang the run in the foreground anyway, so the race gives
+        # it nothing new.
+        if [ -f "${conf_result}" ]; then
+            while IFS= read -r -d '' conf_name && IFS= read -r -d '' conf_value; do
+                if [ "${conf_name}" = "__CONF_STATUS__" ]; then
+                    conf_status="${conf_value}"
+                elif is_conf_variable "${conf_name}"; then
+                    conf_applied_names+=("${conf_name}")
+                    conf_applied_values+=("${conf_value}")
+                fi
+            done < "${conf_result}" || true
+        fi
+        rm -f "${conf_result}" 2>/dev/null || rmdir "${conf_result}" 2>/dev/null || true
+        CONF_RESULT_FILE=""
+    else
+        # mktemp failed: fall back to a process substitution. The same
+        # subshell body runs with fd 3 pointing at its stdout, so the pairs
+        # reach this loop through a pipe. That pipe stays open for as long as
+        # a background job of the configuration file inherits it, so a
+        # compound background job (for example "( ... ) &", "{ ...; } &" or
+        # "f &") can delay this run.
+        log_error "WARNING: could not create a temporary file for the result of ${conf_file}; a compound background job in the configuration file can then delay this run."
+        while IFS= read -r -d '' conf_name && IFS= read -r -d '' conf_value; do
+            if [ "${conf_name}" = "__CONF_STATUS__" ]; then
+                conf_status="${conf_value}"
+            elif is_conf_variable "${conf_name}"; then
+                conf_applied_names+=("${conf_name}")
+                conf_applied_values+=("${conf_value}")
+            fi
+        done < <(
+            exec 3>&1 >/dev/null 2>&1 </dev/null
+            unset conf_result CONF_RESULT_FILE
+            set +o errexit
+            set -o nounset
+            {
+                # shellcheck source=/dev/null
+                . "${conf_file}" 3>&-
+                conf_status=$?
+                printf '%s\0%s\0' __CONF_STATUS__ "${conf_status}" >&3
+                for conf_name in "${CONF_VARIABLE_NAMES[@]}"; do
+                    # A variable that the file unset keeps the value it had before
+                    # the file was read, which may come from the environment.
+                    if [[ -v ${conf_name} ]]; then
+                        printf '%s\0%s\0' "${conf_name}" "${!conf_name}" >&3
+                    fi
+                done
+            } >/dev/null 2>&1
+        )
+    fi
+    # A missing or non-numeric status means that the subshell was aborted (an
+    # unset variable) or that the file ended the shell (an "exit"): nothing is
+    # applied then. A forged "__CONF_STATUS__" pair is treated the same way:
+    # the status is only used arithmetically below, so it must be a number.
+    # A real exit status is 0-255, so an all-digit value of four or more
+    # digits is not one either: the "????*" case treats it like a missing
+    # status.
+    case "${conf_status}" in
+        ""|*[!0-9]*|????*)
+            log_error "WARNING: could not read the configuration file ${conf_file}: it did not finish; ignoring it and continuing with the current settings."
+            return 0
+            ;;
+    esac
+    # The settings are applied here, in this shell, so they are used by the
+    # rest of the run. They are only applied when the name is a known one, and
+    # each value is stored byte for byte with "printf -v": no "eval" is
+    # involved, so a value can contain any character except NUL.
+    local i
+    for ((i = 0; i < ${#conf_applied_names[@]}; i++)); do
+        printf -v "${conf_applied_names[i]}" '%s' "${conf_applied_values[i]}"
+    done
+    if [ "${conf_status}" -ne 0 ]; then
+        log_error "WARNING: the last command of the configuration file ${conf_file} returned ${conf_status}; its settings are applied anyway."
+    fi
+    log_line "Loaded configuration file ${conf_file}."
+    return 0
+}
+
+# --- Monit Integration ---
+
+# Installs the "update" variant of the monit system configuration, which
+# temporarily raises the system load alert levels while the update runs.
+# Parameters: none.
+# Missing files or a missing monit binary are skipped silently.
+raise_monit_levels() {
+    if [ ! -f "${MONIT_UPDATE_CONF}" ] || [ ! -f "${MONIT_DEFAULT_CONF}" ]; then
+        return 0
+    fi
+    if ! command -v monit >/dev/null 2>&1; then
+        return 0
+    fi
+    # The flag is set before the copy, so the restore always runs. A copy
+    # that fails leaves the active configuration empty, and it must be
+    # restored from the default configuration in that case as well.
+    MONIT_RAISED=1
+    if ! install_config "${MONIT_UPDATE_CONF}" "${MONIT_ACTIVE_CONF}"; then
+        log_error "WARNING: could not install ${MONIT_UPDATE_CONF} as ${MONIT_ACTIVE_CONF}; the default configuration is restored after the update."
+        return 0
+    fi
+    local reload_output
+    if ! reload_output="$(monit reload 2>&1)"; then
+        log_error "WARNING: 'monit reload' failed after installing ${MONIT_UPDATE_CONF}: ${reload_output}"
+        return 0
+    fi
+    log_line "Raised the monit system load alert levels using ${MONIT_UPDATE_CONF}."
+    return 0
+}
+
+# Restores the default monit system configuration.
+# Parameters: none.
+# Does nothing when the raised configuration is not active. When the copy
+# fails, monit is not reloaded: a reload with an incomplete configuration
+# would take the checks of monit down.
+restore_monit_levels() {
+    if [ "${MONIT_RAISED}" -ne 1 ]; then
+        return 0
+    fi
+    MONIT_RAISED=0
+    if [ ! -f "${MONIT_DEFAULT_CONF}" ]; then
+        log_error "WARNING: ${MONIT_DEFAULT_CONF} is missing; the raised monit configuration stays in place."
+        return 0
+    fi
+    if ! install_config "${MONIT_DEFAULT_CONF}" "${MONIT_ACTIVE_CONF}"; then
+        log_error "WARNING: could not restore ${MONIT_DEFAULT_CONF} as ${MONIT_ACTIVE_CONF}; the active monit configuration is incomplete."
+        return 0
+    fi
+    local reload_output
+    if ! reload_output="$(monit reload 2>&1)"; then
+        log_error "WARNING: 'monit reload' failed after restoring ${MONIT_DEFAULT_CONF}: ${reload_output}"
+        return 0
+    fi
+    log_line "Restored the default monit configuration (${MONIT_DEFAULT_CONF})."
+    return 0
+}
+
+# --- Update ---
+
+# Runs the update command and logs every output line with a timestamp.
+# Parameters: none. Sets UPDATE_EXIT to the exit code of the update.
+# When a line cannot be appended to the log file, the stamped line is written
+# to stderr instead so that the update output is not lost when the log file
+# is unwritable.
+run_update() {
+    local line stamped
+    if [ -z "${UPDATE_CMD}" ]; then
+        log_error "ERROR: no update command configured (UPDATE_CMD is empty)."
+        UPDATE_EXIT=1
+        return 0
+    fi
+    # The exit code of the update is taken from PIPESTATUS, so errexit is
+    # suspended around the pipeline: a failing update must not abort the
+    # script before the alert can be sent.
+    set +o errexit
+    # The command line is evaluated by the shell so that arguments and quotes
+    # work, for example UPDATE_CMD="sh -c 'echo boom; exit 7'".
+    eval "${UPDATE_CMD}" 2>&1 | while IFS= read -r line || [ -n "${line}" ]; do
+        stamped="$(printf "[%s] %s" "$(date '+%a %b %d %H:%M:%S %Z %Y')" "${line}")"
+        if ! printf "%s\n" "${stamped}" 2>/dev/null >> "${LOG_FILE}"; then
+            printf "%s\n" "${stamped}" >&2
+        fi
+        if [ -n "${TEMP_OUTPUT_FILE}" ]; then
+            printf "%s\n" "${stamped}" 2>/dev/null >> "${TEMP_OUTPUT_FILE}" || true
+        fi
+    done
+    UPDATE_EXIT="${PIPESTATUS[0]}"
+    set -o errexit
+    return 0
+}
+
+# --- Email ---
+
+# Sends an email with the given subject and body text.
+# Parameters: $1 = subject, $2 = body text.
+# Returns: 0 when sendmail succeeded, 1 otherwise.
+send_email() {
+    local subject="$1" body="$2" date_header message
+    date_header="$(date -R)"
+    message="$(cat <<MAIL_BODY
+From: ${EMAIL_FROM}
+To: ${EMAIL_TO}
+Subject: ${subject}
+Date: ${date_header}
+
+${body}
+MAIL_BODY
+)"
+    if ! printf "%s\n" "${message}" | "${SENDMAIL_CMD}" -t -oi; then
+        return 1
+    fi
+    return 0
+}
+
+# Builds the body of the failure alert.
+# Parameters: $1 = exit code of the update.
+build_failure_body() {
+    local exit_code="$1" host output_source output_label tail_output
+    host="$(get_hostname)"
+    # The output of this run is captured in a temporary file. When that file
+    # is not available the tail of the log file is used instead.
+    output_source="${TEMP_OUTPUT_FILE}"
+    output_label="Last ${LOG_TAIL_LINES} lines of this run's output:"
+    if [ -z "${output_source}" ] || [ ! -f "${output_source}" ]; then
+        output_source="${LOG_FILE}"
+        output_label="Last ${LOG_TAIL_LINES} lines of the log file (the output of this run could not be captured separately):"
+    fi
+    tail_output="$(tail -n "${LOG_TAIL_LINES}" "${output_source}" 2>/dev/null || true)"
+    cat <<BODY
+The nightly apk-autoupdate run on host ${host} failed.
+
+Host:       ${host}
+Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+Exit code:  ${exit_code}
+Log file:   ${LOG_FILE}
+
+${output_label}
+------------------------------------------------------------
+${tail_output}
+------------------------------------------------------------
+
+The update was not completed. Please investigate.
+BODY
+}
+
+# Builds the body of the test alert.
+# Parameters: none.
+build_test_body() {
+    local host
+    host="$(get_hostname)"
+    cat <<BODY
+This is a TEST alert from the apk-autoupdate-cron script on host ${host}.
+
+No update was run and nothing is broken: this message only verifies that the
+mail path (${SENDMAIL_CMD}) works.
+
+Host:       ${host}
+Time (UTC): $(date -u '+%Y-%m-%d %H:%M:%S UTC')
+Log file:   ${LOG_FILE}
+BODY
+}
+
+# Sends the failure alert, unless email alerting is disabled.
+# Parameters: $1 = exit code of the update.
+report_failure() {
+    local exit_code="$1" subject body
+    if [ "${EMAIL_ENABLED}" != "true" ]; then
+        log_line "Email alerting is disabled (EMAIL_ENABLED=${EMAIL_ENABLED}); no failure email was sent."
+        return 0
+    fi
+    subject="[$(get_hostname)] apk-autoupdate FAILED (exit ${exit_code})"
+    body="$(build_failure_body "${exit_code}")"
+    if send_email "${subject}" "${body}"; then
+        log_line "Failure email sent to ${EMAIL_TO}."
+    else
+        log_error "ERROR: sending the failure email to ${EMAIL_TO} via ${SENDMAIL_CMD} failed."
+    fi
+    return 0
+}
+
+# --- Run Modes ---
+
+# Runs the update, logs the result and alerts on failure.
+# Parameters: none.
+run_normal() {
+    # An explicit template is used: the file gets a name the cleanup trap
+    # recognises ("*/apk-autoupdate-cron.*") under "TMPDIR".
+    TEMP_OUTPUT_FILE="$(mktemp "${TMPDIR:-/tmp}/apk-autoupdate-cron.XXXXXX" 2>/dev/null || true)"
+    if [ -z "${TEMP_OUTPUT_FILE}" ]; then
+        # A broken temporary directory must not stop the nightly update: the
+        # run continues, the output is only written to the log file and the
+        # failure alert is built from the tail of that log file.
+        log_error "ERROR: could not create a temporary file for the output of this run; the output is only written to the log file."
+    fi
+    log_line "--- Starting apk-autoupdate ---"
+    raise_monit_levels
+    run_update
+    restore_monit_levels
+    log_line "--- Finished apk-autoupdate (exit ${UPDATE_EXIT}) ---"
+    if [ "${UPDATE_EXIT}" -ne 0 ]; then
+        report_failure "${UPDATE_EXIT}"
+    fi
+    exit "${UPDATE_EXIT}"
+}
+
+# Sends a test alert without running the update.
+# Parameters: none.
+run_test_email() {
+    local subject body
+    subject="[$(get_hostname)] apk-autoupdate TEST alert"
+    body="$(build_test_body)"
+    if send_email "${subject}" "${body}"; then
+        log_line "Test email sent to ${EMAIL_TO}."
+        exit 0
+    fi
+    log_error "ERROR: sending the test email to ${EMAIL_TO} via ${SENDMAIL_CMD} failed."
+    exit 1
+}
+
+# Prints the usage information for this script.
+# Parameters: none.
+usage() {
+    cat <<USAGE
+Usage: apk-autoupdate-cron [OPTION]
+
+Runs the nightly Alpine apk-autoupdate, logs its output and sends an email
+alert when the update fails.
+
+Options:
+  --test-email   Send a test alert to the configured recipient and exit.
+  -h, --help     Show this help text and exit.
+
+Environment variables (the configuration file may override them):
+  APK_AUTOUPDATE_CRON_CONF  Configuration file to source (default: /etc/apk-autoupdate-cron.conf).
+  LOG_FILE                  Log file (default: /var/log/apk-autoupdate.log).
+  UPDATE_CMD                Update command (default: apk-autoupdate).
+  EMAIL_ENABLED             Send failure alerts: true or false (default: true).
+  EMAIL_TO                  Recipient of the alert (default: admin@example.com).
+  EMAIL_FROM                Sender of the alert (default: apk-autoupdate@example.com).
+  SENDMAIL_CMD              Mail command (default: /usr/sbin/sendmail).
+  LOG_TAIL_LINES            Log lines included in the alert (default: 40).
+  MONIT_ACTIVE_CONF         Active monit config (default: /etc/monit.d/system.conf).
+  MONIT_UPDATE_CONF         Monit config used during the update (default: /etc/monit.d/system.conf.update).
+  MONIT_DEFAULT_CONF        Monit config restored afterwards (default: /etc/monit.d/system.conf.default).
+USAGE
+}
+
+# --- Cleanup ---
+
+# Restores the monit configuration and removes the temporary files.
+# Parameters: none. Keeps the exit status of the script.
+# shellcheck disable=SC2329  # Invoked indirectly through the EXIT trap.
+cleanup() {
+    local status=$?
+    set +o errexit
+    restore_monit_levels
+    # Only files that this script created are removed.
+    if [ -n "${TEMP_OUTPUT_FILE}" ]; then
+        case "${TEMP_OUTPUT_FILE}" in
+            */apk-autoupdate-cron.*) rm -f "${TEMP_OUTPUT_FILE}" ;;
+        esac
+    fi
+    if [ -n "${CONF_RESULT_FILE}" ]; then
+        case "${CONF_RESULT_FILE}" in
+            */apk-autoupdate-cron-conf.*) rm -f "${CONF_RESULT_FILE}" ;;
+        esac
+    fi
+    exit "${status}"
+}
+trap cleanup EXIT
+
+# --- Main ---
+
+# The arguments are handled first: the configuration file is only read for
+# the modes that need it, so a usage request never touches the log file.
+# A single argument is expected; anything else is a usage error.
+if [ "$#" -gt 1 ]; then
+    usage >&2
+    exit 2
+fi
+
+# Without any argument the nightly update runs. An empty argument is not the
+# same as no argument at all: it is a usage error.
+if [ "$#" -eq 0 ]; then
+    load_config_file
+    run_normal
+fi
+
+case "${1:-}" in
+    --test-email)
+        load_config_file
+        run_test_email
+        ;;
+    -h|--help)
+        usage
+        exit 0
+        ;;
+    *)
+        usage >&2
+        exit 2
+        ;;
+esac
