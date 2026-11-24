@@ -21,6 +21,8 @@
 #    during the timer window are absorbed. Once the timer expires, rsync
 #    runs and the cycle resets.
 # 4. Sends an SMTP email alert if any rsync job fails.
+# 5. Throttles rsync with nice, ionice and --bwlimit so it does not starve the NAS.
+# 6. Ignores WATCH_EXCLUDES paths (e.g. a media server cache) in the file watcher.
 #
 # Usage:
 #   /opt/etc/qnap_realtime_sync.sh --daemon     (Run as background daemon)
@@ -34,7 +36,7 @@
 #
 # QNAP:
 #   - Entware installed with the following packages:
-#       opkg install bash inotify-tools rsync msmtp
+#       opkg install bash curl inotifywait rsync coreutils-nohup coreutils-nice ionice
 #   - Rsync password file at /opt/etc/rsync_truenas.secret (chmod 600)
 #     containing the plaintext password for the TrueNAS rsync user.
 #   - Auto-start entry in Entware.sh:
@@ -52,6 +54,14 @@
 # filesystem events (~9/sec) that would starve the debounce timer,
 # preventing rsync from ever firing. Instead, we pass only the
 # SYNC_DIRS paths to inotifywait.
+#
+# Configuration:
+#   Settings live at the top of the script (# --- Configuration ---). Any of
+#   them can be overridden in the optional config file next to the script
+#   (/opt/etc/qnap_realtime_sync.conf, or the path in QNAP_SYNC_CONF), which
+#   is sourced at startup as a bash file. Start from
+#   qnap_realtime_sync.conf.example. The config file must be owned by the user
+#   running the script and must not be group- or world-writable (chmod 600).
 # =================================================================
 
 set -o pipefail
@@ -111,6 +121,24 @@ SMTP_TLS_VERIFY=true
 EMAIL_FROM="noreply@example.com"
 EMAIL_TO="you@example.com"
 
+# --- CPU / IO Throttling ---
+# Controls how hard the rsync process competes for CPU and disk. Lower the
+# priority on a slow NAS, or when the NAS feels sluggish during syncs.
+#
+# Example profiles:
+#   Dual-core Celeron:  RSYNC_NICE=19, RSYNC_IONICE_CLASS=3 (idle), RSYNC_BWLIMIT=50000
+#   Quad-core i5:       RSYNC_NICE=10, RSYNC_IONICE_CLASS=2 (best-effort), RSYNC_BWLIMIT=0
+#
+# RSYNC_NICE: CPU scheduling priority (0 = normal, 19 = lowest)
+RSYNC_NICE=10
+# RSYNC_IONICE_CLASS: I/O scheduling class (2 = best-effort, 3 = idle: only when the disk is idle)
+RSYNC_IONICE_CLASS=2
+# RSYNC_BWLIMIT: rsync bandwidth limit in KB/s (0 = unlimited)
+RSYNC_BWLIMIT=0
+
+# Label used in alert subjects, the status screen and the log.
+SYNC_LABEL="QNAP Real-Time Sync"
+
 # Rsync exclusion list - patterns for files/directories that should never
 # be synced, even if they live inside a SYNC_DIR. Trailing slashes match
 # directories explicitly. I exclude the usual QNAP system clutter here;
@@ -122,6 +150,7 @@ EXCLUDES=(
     "--exclude=.@__thumb/"
     "--exclude=.@upload_cache/"
     "--exclude=.streams/"
+    "--exclude=Multimedia/jellyfin-cache/"
     "--exclude=incomplete/"
     "--exclude=admin/.rnd"
     "--exclude=aquota.user"
@@ -141,17 +170,68 @@ SYNC_DIRS=(
     "Public"
 )
 
-# Construct rsync include/exclude filter arguments from SYNC_DIRS.
+# Paths under SOURCE_DIR that inotifywait must NOT watch, relative to SOURCE_DIR.
+# A media server cache (transcode segments, images) is regenerated on demand and
+# written constantly during playback; watching it would start a full rsync pass
+# every few seconds. Give each entry a matching EXCLUDES pattern so rsync skips
+# it as well.
+WATCH_EXCLUDES=(
+    "Multimedia/jellyfin-cache"
+)
+
+# Number of times to retry a failed rsync before giving up and sending an alert.
+# Each retry re-runs the full rsync (which is incremental, so only failed/changed
+# files are re-transferred). Set to 0 to disable retries.
+RSYNC_RETRIES=3
+
+# Seconds to wait between retries - gives transient issues (network blips,
+# locked files) time to resolve.
+RSYNC_RETRY_DELAY=5
+
+# --- Circuit Breaker Configuration ---
+
+# If the daemon encounters ERROR_THRESHOLD or more rsync failures within
+# ERROR_WINDOW seconds, it terminates itself and sends a final alert.
+# This prevents a broken configuration from flooding the email relay and
+# consuming resources indefinitely.
+ERROR_THRESHOLD=10
+ERROR_WINDOW=1800  # 30 minutes
+
+# File that stores unix timestamps of recent errors, one per line.
+# Used by the circuit breaker to track error frequency.
+ERROR_LOG="/tmp/qnap_sync_errors.log"
+
+# --- Debounce Configuration ---
+
+# How long (in seconds) to wait after the first filesystem event before running
+# rsync. This window allows rapid bursts of changes (e.g., extracting an archive)
+# to be batched into a single rsync invocation.
+DEBOUNCE_SECONDS=10
+
+# Flag file for the debounce mechanism. Its presence means a timer subshell is
+# already counting down - further events are safely absorbed until it expires.
+SYNC_PENDING="/tmp/qnap_sync_pending"
+
+# Optional config file with site-specific overrides. It sits next to the script
+# and has the script's name with .conf (for /opt/etc/qnap_realtime_sync.sh that
+# is /opt/etc/qnap_realtime_sync.conf). QNAP_SYNC_CONF overrides the path; the
+# daemon re-exec inherits both.
+CONFIG_FILE="${QNAP_SYNC_CONF:-${0%.sh}.conf}"
+
+# --- Functions ---
+
+# Build rsync include/exclude filter arguments from SYNC_DIRS.
 # --include=/<dir>/***  recursively includes the directory and all contents.
 # The final --exclude=/* drops every other top-level entry.
 # Order matters: rsync evaluates filter rules top-to-bottom, first match wins.
-FILTER_ARGS=()
-for dir in "${SYNC_DIRS[@]}"; do
-    FILTER_ARGS+=("--include=/${dir}/***")
-done
-FILTER_ARGS+=("--exclude=/*")
-
-# --- Functions ---
+# Called after the config file is loaded so overrides to SYNC_DIRS apply.
+build_filter_args() {
+    FILTER_ARGS=()
+    for dir in "${SYNC_DIRS[@]}"; do
+        FILTER_ARGS+=("--include=/${dir}/***")
+    done
+    FILTER_ARGS+=("--exclude=/*")
+}
 
 # Helper function to format log output with timestamps
 log_message() {
@@ -284,11 +364,87 @@ format_bytes() {
     fi
 }
 
+# Print an Error line and a hint line to stderr, then exit 1. Used by
+# load_config and validate_settings so every config failure ends the same way.
+config_error() {
+    echo "Error: $1" >&2
+    echo "Fix or move $CONFIG_FILE and run the command again. A running daemon keeps running." >&2
+    exit 1
+}
+
+# Load the optional site-specific config file. It lives next to the script
+# (same directory, same owner) and is trusted like the script itself, which is
+# why it is sourced rather than parsed. QNAP_SYNC_CONF overrides the default
+# path; the daemon re-exec inherits both.
+load_config() {
+    # Refuse symlinks first, including dangling ones, before any existence test.
+    if [ -L "$CONFIG_FILE" ]; then
+        config_error "config file is a symlink: $CONFIG_FILE"
+    fi
+    # No config file: defaults apply.
+    [ ! -e "$CONFIG_FILE" ] && return 0
+
+    # Refuse unsafe config files before sourcing them.
+    if [ ! -f "$CONFIG_FILE" ]; then
+        config_error "config file is not a regular file: $CONFIG_FILE"
+    fi
+    if [ ! -O "$CONFIG_FILE" ]; then
+        config_error "config file not owned by $(id -un): $CONFIG_FILE"
+    fi
+    local mode
+    mode=$(stat -c '%a' "$CONFIG_FILE")
+    if [ $((8#$mode & 020)) -ne 0 ] || [ $((8#$mode & 002)) -ne 0 ]; then
+        config_error "config file is group- or world-writable: $CONFIG_FILE"
+    fi
+    if ! "$BASH" -n "$CONFIG_FILE"; then
+        config_error "config file fails syntax check: $CONFIG_FILE"
+    fi
+
+    # shellcheck source=/dev/null
+    source "$CONFIG_FILE"
+}
+
+# Check that one setting is a decimal integer without leading zeros, with
+# optional inclusive lower and upper bounds. Used by validate_settings for every
+# numeric setting so the integer check is written once, not ten times. Bash
+# arithmetic reads 010 as octal and rejects 08, so leading zeros are refused.
+check_int() {
+    local name="$1"
+    local value="$2"
+    local min="$3"
+    local max="$4"
+    if [[ ! $value =~ ^(0|[1-9][0-9]*)$ ]]; then
+        config_error "$name must be a decimal integer without leading zeros (got '$value')"
+    fi
+    if [ -n "$min" ] && [ "$value" -lt "$min" ]; then
+        config_error "$name must be at least $min (got '$value')"
+    fi
+    if [ -n "$max" ] && [ "$value" -gt "$max" ]; then
+        config_error "$name must not exceed $max (got '$value')"
+    fi
+}
+
+# Validate all numeric settings after the config file has been loaded.
+# Exits with an error message if any setting is not a decimal integer without
+# leading zeros, or is outside its range.
+validate_settings() {
+    check_int RSYNC_NICE "$RSYNC_NICE" 0 19
+    check_int RSYNC_IONICE_CLASS "$RSYNC_IONICE_CLASS" 2 3
+    check_int RSYNC_BWLIMIT "$RSYNC_BWLIMIT"
+    check_int LOG_MAX_SIZE "$LOG_MAX_SIZE"
+    check_int LOG_KEEP "$LOG_KEEP" 1
+    check_int RSYNC_RETRIES "$RSYNC_RETRIES"
+    check_int RSYNC_RETRY_DELAY "$RSYNC_RETRY_DELAY"
+    check_int ERROR_THRESHOLD "$ERROR_THRESHOLD"
+    check_int ERROR_WINDOW "$ERROR_WINDOW"
+    check_int DEBOUNCE_SECONDS "$DEBOUNCE_SECONDS"
+}
+
 # Sends an SMTP email alert using curl if a sync job fails.
 # Supports plain SMTP, STARTTLS, implicit TLS, and optional authentication
 # based on the SMTP_* configuration variables above.
 send_alert() {
-    local subject="QNAP Sync Alert: Job Failed"
+    local subject="${SYNC_LABEL} Alert: Job Failed"
     local message="$1"
 
     log_message "Attempting to send email alert..."
@@ -402,6 +558,15 @@ record_error() {
 run_rsync() {
     local mode="$1"
 
+    # ionice/nice prefix for CPU/IO throttling. ionice class 3 (idle) takes no
+    # priority level; class 2 (best-effort) uses the default level 4.
+    local throttle=(/opt/bin/ionice -c "$RSYNC_IONICE_CLASS" /opt/bin/nice -n "$RSYNC_NICE")
+    # Bandwidth limit argument, empty when unlimited
+    local bwlimit_args=()
+    if [ "$RSYNC_BWLIMIT" -gt 0 ]; then
+        bwlimit_args=("--bwlimit=$RSYNC_BWLIMIT")
+    fi
+
     # Rotate the log before each sync to prevent unbounded growth.
     # Verbose rsync output can produce thousands of lines per run.
     rotate_log
@@ -414,7 +579,7 @@ run_rsync() {
     if [ "$mode" == "initial" ]; then
         # Interactive mode: print a progress bar to the console for the operator.
         # No retries - the user can see the output and re-run manually.
-        /opt/bin/rsync -rlptgoD --info=progress2 --delete "${EXCLUDES[@]}" "${FILTER_ARGS[@]}" "$SOURCE_DIR/" "$DEST_RSYNC/"
+        "${throttle[@]}" /opt/bin/rsync -rlptgoD --info=progress2 --delete "${bwlimit_args[@]}" "${EXCLUDES[@]}" "${FILTER_ARGS[@]}" "$SOURCE_DIR/" "$DEST_RSYNC/"
         local status=$?
         if [ $status -eq 0 ] || [ $status -eq 23 ] || [ $status -eq 24 ]; then
             log_message "Rsync job completed successfully."
@@ -450,7 +615,7 @@ run_rsync() {
         # Avoid the pipe to tee - PIPESTATUS is unreliable in nested subshells
         # on some bash builds. Instead, write directly to a temp file, then
         # append to the log afterward.
-        /opt/bin/rsync -rlptgoDv --delete \
+        "${throttle[@]}" /opt/bin/rsync -rlptgoDv --delete "${bwlimit_args[@]}" \
             "${EXCLUDES[@]}" "${FILTER_ARGS[@]}" \
             "$SOURCE_DIR/" "$DEST_RSYNC/" \
             >"$rsync_stdout" 2>"$rsync_stderr"
@@ -513,6 +678,12 @@ ${failed_files}"
 No specific file errors captured. Check $LOG_FILE on the QNAP for details."
     fi
 
+    if [ "$status" -eq 126 ] || [ "$status" -eq 127 ]; then
+        err_msg="${err_msg}
+
+Exit code $status: a command could not be run. Check that /opt/bin/rsync, /opt/bin/ionice and /opt/bin/nice exist (Entware packages rsync, ionice, coreutils-nice)."
+    fi
+
     log_message "Rsync job failed with exit code $status after $RSYNC_RETRIES retries."
     send_alert "$err_msg"
     rm -f "$rsync_stderr" "$rsync_stdout"
@@ -520,41 +691,6 @@ No specific file errors captured. Check $LOG_FILE on the QNAP for details."
     # Record the error for the circuit breaker
     record_error
 }
-
-# --- Rsync Retry Configuration ---
-
-# Number of times to retry a failed rsync before giving up and sending an alert.
-# Each retry re-runs the full rsync (which is incremental, so only failed/changed
-# files are re-transferred). Set to 0 to disable retries.
-RSYNC_RETRIES=3
-
-# Seconds to wait between retries - gives transient issues (network blips,
-# locked files) time to resolve.
-RSYNC_RETRY_DELAY=5
-
-# --- Circuit Breaker Configuration ---
-
-# If the daemon encounters ERROR_THRESHOLD or more rsync failures within
-# ERROR_WINDOW seconds, it terminates itself and sends a final alert.
-# This prevents a broken configuration from flooding the email relay and
-# consuming resources indefinitely.
-ERROR_THRESHOLD=10
-ERROR_WINDOW=1800  # 30 minutes
-
-# File that stores unix timestamps of recent errors, one per line.
-# Used by the circuit breaker to track error frequency.
-ERROR_LOG="/tmp/qnap_sync_errors.log"
-
-# --- Debounce Configuration ---
-
-# How long (in seconds) to wait after the first filesystem event before running
-# rsync. This window allows rapid bursts of changes (e.g., extracting an archive)
-# to be batched into a single rsync invocation.
-DEBOUNCE_SECONDS=10
-
-# Flag file for the debounce mechanism. Its presence means a timer subshell is
-# already counting down - further events are safely absorbed until it expires.
-SYNC_PENDING="/tmp/qnap_sync_pending"
 
 # --- Main Logic ---
 
@@ -603,6 +739,7 @@ Files:
   /opt/etc/rsync_truenas.secret    Rsync password (chmod 600)
   /var/log/qnap_realtime_sync.log  Daemon log file
   /var/run/qnap_sync.pid           PID file for daemon management
+  /opt/etc/qnap_realtime_sync.conf  Optional settings (see qnap_realtime_sync.conf.example; path via QNAP_SYNC_CONF)
 
 Examples:
   /opt/etc/qnap_realtime_sync.sh --daemon      # Start the daemon
@@ -634,7 +771,7 @@ render_status() {
     local BLACK='\033[30m'
 
     echo ""
-    echo -e "  ${BOLD}${CYAN}QNAP Real-Time Sync${RESET}  ${DIM}$(date '+%Y-%m-%d %H:%M:%S')${RESET}"
+    echo -e "  ${BOLD}${CYAN}${SYNC_LABEL}${RESET}  ${DIM}$(date '+%Y-%m-%d %H:%M:%S')${RESET}"
     echo -e "  ${DIM}$(printf '%.0s─' {1..45})${RESET}"
     echo ""
 
@@ -655,6 +792,13 @@ render_status() {
     else
         echo -e "  ${BOLD}Status${RESET}   ${BLACK}${BG_RED} STOPPED ${RESET}"
     fi
+
+    # Throttle profile
+    local ionice_label="best-effort"
+    [ "$RSYNC_IONICE_CLASS" -eq 3 ] && ionice_label="idle"
+    local bw_label="unlimited"
+    [ "$RSYNC_BWLIMIT" -gt 0 ] && bw_label="${RSYNC_BWLIMIT} KB/s"
+    echo -e "  ${BOLD}Throttle${RESET} nice=${WHITE}${RSYNC_NICE}${RESET}  io=${WHITE}${ionice_label}${RESET}  bw=${WHITE}${bw_label}${RESET}"
     echo ""
 
     # Transfer statistics
@@ -854,6 +998,15 @@ Auth: $([ -n "$SMTP_USER" ] && echo "yes ($SMTP_USER)" || echo "no")"
     exit 0
 }
 
+# Load the optional config file, validate settings and build the rsync filter
+# argument list. --help (and -h) must work even with a broken config file, so
+# they are handled before this block.
+if [ "$1" != "-h" ] && [ "$1" != "--help" ]; then
+    load_config
+    validate_settings
+    build_filter_args
+fi
+
 case "$1" in
     --help)       show_help ;;
     --status)     show_status "$2" ;;
@@ -916,7 +1069,7 @@ fi
 # We use our own PID so --stop can find and kill us.
 echo $$ > "$PID_FILE"
 
-log_message "Starting QNAP Real-Time Sync Daemon (PID $$)..."
+log_message "Starting ${SYNC_LABEL} Daemon (PID $$)..."
 
 # Clean up stale state from a previous run and initialize stats counters
 rm -f "$SYNC_PENDING" "$ERROR_LOG"
@@ -934,6 +1087,8 @@ run_rsync "daemon"
 # .qpkg/QVPN, .samba/lock, etc.) that generate continuous filesystem events
 # (~9 events/sec). If we watched the entire volume, these events would
 # constantly reset the debounce timer, preventing rsync from ever firing.
+# WATCH_EXCLUDES entries are appended as "@<path>" exclusions after the
+# zero-watch guard below, so they never reduce the count of real directories.
 WATCH_DIRS=()
 for dir in "${SYNC_DIRS[@]}"; do
     if [ -d "$SOURCE_DIR/$dir" ]; then
@@ -948,13 +1103,37 @@ if [ ${#WATCH_DIRS[@]} -eq 0 ]; then
     exit 1
 fi
 
-log_message "Watching ${#WATCH_DIRS[@]} directories for changes..."
+# Exclude WATCH_EXCLUDES paths from the watch. inotifywait treats an argument
+# starting with "@" as a path to exclude, so events under those paths never
+# start a sync cycle. Only existing entries are appended; missing ones are
+# logged as warnings and take effect after a restart once they exist.
+real_dirs=${#WATCH_DIRS[@]}
+excluded=0
+for entry in "${WATCH_EXCLUDES[@]}"; do
+    if [ -e "$SOURCE_DIR/$entry" ]; then
+        WATCH_DIRS+=("@$SOURCE_DIR/$entry")
+        excluded=$((excluded + 1))
+    else
+        log_message "Warning: watch exclusion '$entry' not found; it takes effect after a restart once it exists."
+    fi
+done
+
+if [ "$excluded" -eq 1 ]; then
+    log_message "Watching $real_dirs directories ($excluded excluded path) for changes..."
+elif [ "$excluded" -gt 1 ]; then
+    log_message "Watching $real_dirs directories ($excluded excluded paths) for changes..."
+else
+    log_message "Watching $real_dirs directories for changes..."
+fi
 
 # --- Event Loop ---
 #
 # inotifywait runs in monitor mode (-m) watching all WATCH_DIRS recursively (-r)
 # in quiet mode (-q, suppresses the "Setting up watches" banner).
 # It outputs one line per event, which is piped into the while-read loop.
+# WATCH_DIRS holds each SYNC_DIR as a full path plus an "@<path>" exclusion for
+# every WATCH_EXCLUDES entry that exists at startup, so events under those
+# paths never reach the debounce loop.
 #
 # Debounce strategy (flag-file based):
 #   The previous approach used kill-and-restart: each event killed the pending

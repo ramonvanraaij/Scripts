@@ -100,7 +100,7 @@ Here are a few key scripts in this collection:
 *   **`linux/Alpine Linux/apk-autoupdate-cron`**: Runs the nightly Alpine apk-autoupdate, logs the output and sends an email alert when the update fails.
 *   **`linux/Proxmox Mail Gateway/pmg_backup.sh`**: A backup and rotation script for Proxmox Mail Gateway (PMG) configurations.
 *   **`linux/Debian/TrueNAS_SCALE/update_sd_grub.sh`**: Automates updating the Legacy GRUB bootloader on an internal SD card for TrueNAS SCALE (HP MicroServer Gen8 workaround).
-*   **`linux/QNAP/qnap_realtime_sync.sh`**: A real-time sync daemon for QNAP NAS that monitors directories with `inotifywait` and synchronizes changes to a TrueNAS rsync target, with debouncing, automatic retries, a circuit breaker, log rotation, and SMTP failure alerts.
+*   **`linux/QNAP/qnap_realtime_sync.sh`**: A real-time sync daemon for QNAP NAS that monitors directories with `inotifywait` and synchronizes changes to a TrueNAS rsync target, with debouncing, automatic retries, a circuit breaker, CPU/IO and bandwidth throttling, watch exclusions, log rotation, and SMTP failure alerts. Site-specific settings go in an optional config file (see `linux/QNAP/qnap_realtime_sync.conf.example`).
 
 ---
 

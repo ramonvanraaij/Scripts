@@ -1,0 +1,147 @@
+# qnap_realtime_sync.conf.example
+# =================================================================
+# Example settings for qnap_realtime_sync.sh
+#
+# Copyright (c) 2026 Rámon van Raaij
+# License: BSD-3-Clause
+# Author: Rámon van Raaij | Bluesky: @ramonvanraaij.nl | GitHub: https://github.com/ramonvanraaij | Website: https://ramon.vanraaij.eu
+#
+# How to use this file:
+#   1. Copy it to /opt/etc/qnap_realtime_sync.conf
+#   2. chmod 600 /opt/etc/qnap_realtime_sync.conf   (the script refuses
+#      group- or world-writable config files)
+#   3. Uncomment the settings that differ from the defaults in
+#      qnap_realtime_sync.sh. This file is plain bash: anything you
+#      uncomment overrides the script's built-in default at startup.
+#   4. The script reads this file from next to the script (the script name
+#      with .conf instead of .sh), or from the path in QNAP_SYNC_CONF.
+#   5. Do not set CONFIG_FILE or QNAP_SYNC_CONF in this file.
+
+# --- Root and target ---
+
+# SOURCE_DIR="/share/CACHEDEV1_DATA"
+#   Root of the QNAP data volume containing all shared folders.
+
+# DEST_RSYNC="rsync://rsync@YOUR_TRUENAS_IP:30873/backups"
+#   TrueNAS rsync daemon target - format: rsync://USER@HOST:PORT/MODULE.
+
+# PASSWORD_FILE="/opt/etc/rsync_truenas.secret"
+#   File containing the rsync password (chmod 600). Prevents rsync from
+#   prompting interactively, which would hang the daemon.
+
+# --- Logging ---
+
+# LOG_FILE="/var/log/qnap_realtime_sync.log"
+#   All daemon activity is appended here for troubleshooting.
+
+# PID_FILE="/var/run/qnap_sync.pid"
+#   PID file - written on daemon start, used by --stop to find and kill the process.
+
+# STATS_FILE="/tmp/qnap_sync_stats"
+#   Stats file - accumulates transfer statistics across sync runs for --status.
+
+# LOG_MAX_SIZE=$((10 * 1024 * 1024))
+#   Log rotation threshold in bytes (default 10 MB); rotate when the active log exceeds this.
+
+# LOG_KEEP=3
+#   Number of compressed log archives to retain (at least 1).
+
+# --- Email Configuration ---
+
+# SMTP_SERVER="smtp://YOUR_SMTP_SERVER:25"
+#   SMTP server URL. Supported schemes: smtp:// (plain), smtps:// (implicit TLS),
+#   or smtp://host:587 with SMTP_TLS="starttls".
+
+# SMTP_USER=""
+#   SMTP authentication user. Leave empty for unauthenticated relay.
+
+# SMTP_PASS=""
+#   SMTP authentication password.
+
+# SMTP_TLS=""
+#   TLS mode: "" (none), "starttls" or "implicit".
+
+# SMTP_TLS_VERIFY=true
+#   Verify the server certificate. Set false for self-signed certs or testing.
+
+# EMAIL_FROM="noreply@example.com"
+#   Envelope and header sender for alert emails.
+
+# EMAIL_TO="you@example.com"
+#   Recipient of alert emails.
+
+# --- CPU / IO Throttling ---
+
+# RSYNC_NICE=10
+#   CPU scheduling priority (0 = normal, 19 = lowest).
+
+# RSYNC_IONICE_CLASS=2
+#   I/O scheduling class (2 = best-effort, 3 = idle: only when the disk is idle).
+
+# RSYNC_BWLIMIT=0
+#   rsync bandwidth limit in KB/s (0 = unlimited).
+
+# SYNC_LABEL="QNAP Real-Time Sync"
+#   Name used in alert subjects, the status screen and the log.
+
+# --- Rsync exclusion list ---
+
+# EXCLUDES=(
+#     "--exclude=@Recycle/"
+#     "--exclude=.Trash-1000/"
+#     "--exclude=@DownloadStationTempFiles/"
+#     "--exclude=.@__thumb/"
+#     "--exclude=.@upload_cache/"
+#     "--exclude=.streams/"
+#     "--exclude=Multimedia/jellyfin-cache/"
+#     "--exclude=incomplete/"
+#     "--exclude=admin/.rnd"
+#     "--exclude=aquota.user"
+#     "--exclude=Lost+Found/"
+# )
+#   Patterns for files/directories that should never be synced. Setting an
+#   array in this file replaces the default list entirely.
+
+# --- Sync directories ---
+
+# SYNC_DIRS=(
+#     "Backups"
+#     "Downloads"
+#     "homes"
+#     "Multimedia"
+#     "Photos"
+#     "Public"
+# )
+#   Top-level directories under SOURCE_DIR that are synced and watched.
+#   Setting an array in this file replaces the default list entirely.
+
+# WATCH_EXCLUDES=(
+#     "Multimedia/jellyfin-cache"
+# )
+#   Paths under SOURCE_DIR that inotifywait must not watch, relative to
+#   SOURCE_DIR. Give each entry a matching EXCLUDES pattern as well.
+#   An entry that does not exist at startup is skipped until the next restart.
+#   Setting an array in this file replaces the default list entirely.
+
+# --- Rsync retry / circuit breaker / debounce ---
+
+# RSYNC_RETRIES=3
+#   Number of times to retry a failed rsync before giving up. Set to 0 to disable retries.
+
+# RSYNC_RETRY_DELAY=5
+#   Seconds to wait between retries.
+
+# ERROR_THRESHOLD=10
+#   Circuit breaker: errors within ERROR_WINDOW seconds that trip the breaker.
+
+# ERROR_WINDOW=1800
+#   Circuit breaker window in seconds (default 1800 = 30 minutes).
+
+# ERROR_LOG="/tmp/qnap_sync_errors.log"
+#   File that stores unix timestamps of recent errors, one per line.
+
+# DEBOUNCE_SECONDS=10
+#   Seconds to wait after the first filesystem event before running rsync.
+
+# SYNC_PENDING="/tmp/qnap_sync_pending"
+#   Flag file for the debounce mechanism.
