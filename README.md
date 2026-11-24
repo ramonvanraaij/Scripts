@@ -98,7 +98,7 @@ Here are a few key scripts in this collection:
 *   **`linux/Proxmox/proxmox_vm_lxc_watchdog.sh`**: A watchdog script for Proxmox that monitors VMs and LXC containers, automatically restarting those that are stopped but configured to start on boot.
 *   **`linux/Alpine Linux/restic_backup.sh`**: Automates backups to a Restic repository on Alpine Linux, including database dumps and rotation.
 *   **`linux/Alpine Linux/apk-autoupdate-cron`**: Runs the nightly Alpine apk-autoupdate, logs the output and sends an email alert when the update fails.
-*   **`linux/Proxmox Mail Gateway/pmg_backup.sh`**: A backup and rotation script for Proxmox Mail Gateway (PMG) configurations.
+*   **`linux/Proxmox Mail Gateway/pmg_backup.sh`**: Backs up the Proxmox Mail Gateway configuration with `pmgbackup`, rotates the local copies, can rsync each backup to a remote host and rotate it there, and sends one failure email naming the failed step (optional success email, `--test-email` to check delivery). Settings go in a root-owned config file (see `linux/Proxmox Mail Gateway/pmg_backup.md`).
 *   **`linux/Debian/TrueNAS_SCALE/update_sd_grub.sh`**: Automates updating the Legacy GRUB bootloader on an internal SD card for TrueNAS SCALE (HP MicroServer Gen8 workaround).
 *   **`linux/QNAP/qnap_realtime_sync.sh`**: A real-time sync daemon for QNAP NAS that monitors directories with `inotifywait` and synchronizes changes to a TrueNAS rsync target, with debouncing, automatic retries, a circuit breaker, CPU/IO and bandwidth throttling, watch exclusions, log rotation, and SMTP failure alerts. Site-specific settings go in an optional config file (see `linux/QNAP/qnap_realtime_sync.conf.example`).
 
