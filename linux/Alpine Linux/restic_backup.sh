@@ -18,6 +18,12 @@
 # 5. Applies the retention policy with 'restic forget --group-by host,tags --prune'.
 # 6. Sends failure emails by default (success emails only with EMAIL_ON_SUCCESS=true).
 # 7. Cleans up the staging directory and temporary files on exit.
+#    A backup run ended by TERM, INT or HUP exits 143, 130 or 129 and
+#    sends the failure email, unless the signal arrives once the run is
+#    ending (while the email is being sent, or while the run removes its
+#    files); then nothing more is sent, and the run removes its files
+#    and ends with its own exit code. A --dry-run-prune or --test-email
+#    run ended by a signal sends no failure email.
 #
 # Usage:
 #   restic_backup.sh [--config <path>] [--method REST|B2|SFTP]
@@ -852,6 +858,11 @@ main() {
 
     trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
     trap cleanup EXIT
+    # A run ended by a signal still runs cleanup: it removes the run's files,
+    # and a backup run sends the failure email.
+    trap 'exit 143' TERM
+    trap 'exit 130' INT
+    trap 'exit 129' HUP
 
     # Enable failure notification for a normal backup run before loading
     # configuration or validating settings, so an explicit 'exit 1' anywhere
@@ -1062,24 +1073,10 @@ main() {
 # Cleanup and exit (always preserves the original exit code).
 # ------------------------------------------------------------------
 
-cleanup() {
-    local exit_code=$?
-    set +o errexit
-    trap - ERR
-
-    if [ "${SEND_NOTIFICATION_ON_EXIT}" = "1" ] && [ "${NOTIFICATION_SENT}" = "0" ]; then
-        NOTIFICATION_SENT=1
-        if [ "${exit_code}" -ne 0 ]; then
-            if [ "${EMAIL_ENABLED}" = "true" ]; then
-                send_failure_email "${exit_code}"
-            fi
-        else
-            if [ "${EMAIL_ENABLED}" = "true" ] && [ "${EMAIL_ON_SUCCESS}" = "true" ]; then
-                send_success_email
-            fi
-        fi
-    fi
-
+# Remove the staging directory and the temporary files of the run and
+# release the lock.
+# Parameters: none.
+remove_run_files() {
     if [ "${STAGING_DIR_ACTIVE}" = "1" ]; then
         rm -rf -- "${STAGING_DIR}" 2>/dev/null || true
         STAGING_DIR_ACTIVE=0
@@ -1098,6 +1095,32 @@ cleanup() {
         fi
         LOCK_ACQUIRED=0
     fi
+}
+
+cleanup() {
+    local exit_code=$?
+    set +o errexit
+    trap - ERR
+    # A signal while the run is ending removes the run's files and ends the
+    # run with its own exit code; nothing more is sent.
+    trap 'remove_run_files; exit "${exit_code}"' TERM
+    trap 'remove_run_files; exit "${exit_code}"' INT
+    trap 'remove_run_files; exit "${exit_code}"' HUP
+
+    if [ "${SEND_NOTIFICATION_ON_EXIT}" = "1" ] && [ "${NOTIFICATION_SENT}" = "0" ]; then
+        NOTIFICATION_SENT=1
+        if [ "${exit_code}" -ne 0 ]; then
+            if [ "${EMAIL_ENABLED}" = "true" ]; then
+                send_failure_email "${exit_code}"
+            fi
+        else
+            if [ "${EMAIL_ENABLED}" = "true" ] && [ "${EMAIL_ON_SUCCESS}" = "true" ]; then
+                send_success_email
+            fi
+        fi
+    fi
+
+    remove_run_files
 
     exit "${exit_code}"
 }
