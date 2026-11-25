@@ -15,6 +15,12 @@
 # 5. (Optional) Rotates backups on the remote server.
 # 6. Sends a failure email by default; a success email only with EMAIL_ON_SUCCESS=true.
 # 7. Cleans up its temporary files on exit and exits with the run's code.
+#    A backup run ended by TERM, INT or HUP exits 143, 130 or 129 and sends
+#    the failure email, unless the signal arrives once the run is ending
+#    (while the email is being sent, or while the run removes its temp
+#    files); then nothing more is sent, and the run removes its temp files
+#    and ends with its own exit code. A --test-email run ended by a signal
+#    sends no failure email.
 #
 # Usage:
 #   pmg_backup.sh [--config <path>|--config=<path>] [--test-email | -h|--help]
@@ -69,6 +75,7 @@ ACTION=""
 
 NOTIFICATION_SENT=0
 TEMP_OUTPUT_FILE=""
+RAW_OUTPUT_FILE=""
 LATEST_BACKUP_FILE=""
 FAILED_LINE=""
 FAILED_CMD=""
@@ -541,12 +548,14 @@ create_local_backup() {
         log_error "FATAL: could not create a temp file in TMPDIR."
         exit 1
     fi
+    RAW_OUTPUT_FILE="${raw_output}"
     "${PMGBACKUP_CMD}" backup > "${raw_output}" 2>&1 || rc=$?
     while IFS= read -r line; do
         [ -n "${line}" ] && log_line "${line}"
     done < "${raw_output}"
     LATEST_BACKUP_FILE="$(awk -F': ' '/starting backup to:/ {print $2}' "${raw_output}")"
     rm -f -- "${raw_output}" 2>/dev/null || true
+    RAW_OUTPUT_FILE=""
     if [ "${rc}" -ne 0 ]; then
         log_error "ERROR: ${PMGBACKUP_CMD} backup failed with exit code ${rc}."
         exit "${rc}"
@@ -597,6 +606,7 @@ rsync_backup() {
         exit "${rc}"
     fi
     log_line "Rsync completed successfully."
+    FAILED_STEP="remote rotation"
     remote_cmd="cd '${REMOTE_DIR}' && ls -1t pmg-backup_*.tgz | tail -n +$((REMOTE_MAX_BACKUPS + 1)) | xargs -r rm"
     log_line "Executing remote rotation command..."
     if [ -n "${REMOTE_SSH_KEY}" ]; then
@@ -631,16 +641,30 @@ send_notification_on_exit() {
     fi
 }
 
+# Remove the output and raw temp files of the run.
+remove_temp_files() {
+    if [ -n "${TEMP_OUTPUT_FILE:-}" ]; then
+        rm -f -- "${TEMP_OUTPUT_FILE}" 2>/dev/null || true
+    fi
+    if [ -n "${RAW_OUTPUT_FILE:-}" ]; then
+        rm -f -- "${RAW_OUTPUT_FILE}" 2>/dev/null || true
+        RAW_OUTPUT_FILE=""
+    fi
+}
+
 # Run on EXIT: send at most one notification, remove temp files, and exit
 # with the run's original exit code.
 cleanup() {
     local exit_code=$?
     set +o errexit
     trap - ERR
+    # A signal while the run is ending removes the temp files and ends the
+    # run with its own exit code; nothing more is sent.
+    trap 'remove_temp_files; exit "${exit_code}"' TERM
+    trap 'remove_temp_files; exit "${exit_code}"' INT
+    trap 'remove_temp_files; exit "${exit_code}"' HUP
     send_notification_on_exit "${exit_code}"
-    if [ -n "${TEMP_OUTPUT_FILE:-}" ]; then
-        rm -f -- "${TEMP_OUTPUT_FILE}" 2>/dev/null || true
-    fi
+    remove_temp_files
     exit "${exit_code}"
 }
 
@@ -658,6 +682,11 @@ main() {
 
     trap 'handle_error $LINENO "$BASH_COMMAND"' ERR
     trap cleanup EXIT
+    # A run ended by a signal still runs cleanup: it removes the temp files,
+    # and a backup run sends the failure email.
+    trap 'exit 143' TERM
+    trap 'exit 130' INT
+    trap 'exit 129' HUP
 
     if [ -z "${ACTION}" ]; then
         NOTIFICATION_SENT=0

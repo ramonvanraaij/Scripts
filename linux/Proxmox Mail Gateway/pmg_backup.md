@@ -111,7 +111,7 @@ Check the console output and `/var/log/pmg_backup.log` for any errors.
 * A successful run is silent unless `EMAIL_ON_SUCCESS=true`, in which case exactly one success email is sent.
 * `--test-email` sends exactly one test email and runs no backup, rsync or ssh.
 * A failing `--test-email` run prints an error message, exits 1, and sends no email (the failure email is suppressed because `NOTIFICATION_SENT` is already set).
-* Exit codes: 0 on success; 1 on a validation, config or rotation failure; 2 on a usage error; the failing command's own exit code for pmgbackup, rsync and the remote rotation; 129/130/143 when the run is ended by a HUP/INT/TERM signal. A signal ends the run with that exit code, and the failure email is sent only if bash gets to run its EXIT trap.
+* Exit codes: 0 on success; 1 on a validation, config or rotation failure; 2 on a usage error; the failing command's own exit code for pmgbackup, rsync and the remote rotation; 129/130/143 when the run is ended by a HUP/INT/TERM signal. A backup run ended by a signal sends the failure email, unless the signal arrives once the run is ending (while the email is being sent, or while the run removes its temp files); then nothing more is sent, and the run ends with its own exit code.
 * An rsync failure or a remote rotation failure counts as a failure; the local backup stays.
 * `EMAIL_ENABLED=false` sends no failure or success email; `--test-email` still sends its test email.
 * With `RSYNC_ENABLED=false`, only the local backup and rotation run.
